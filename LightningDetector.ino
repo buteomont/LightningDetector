@@ -16,6 +16,10 @@
  *
  */
 //#include "WProgram.h" instead of Arduino.h when outside of Arduino IDE
+#include <ESP8266WiFi.h>
+#include <WiFiClient.h>
+#include <ESP8266WebServer.h>
+#include <ESP8266mDNS.h>
 #include "Arduino.h"
 #include <pgmspace.h>
 #include <ctype.h>
@@ -24,6 +28,16 @@
 //#include "RTClib.h"
 #include <Esp.h>
 #include "LightningDetector.h"
+
+#ifndef AP_SSID
+  #define AP_SSID "Kif's Dream"
+  #define AP_PASS "buteomontHill"
+  #endif
+
+const char *ssid = AP_SSID;
+const char *password = AP_PASS;
+const char *htmlCr="<br>";
+const char *textCr="\n\r";
 
 int lastReading = 0;
 int thisReading = 0;
@@ -34,16 +48,17 @@ int strikeCount=0;
 boolean inStrike=false; //strike is in progress
 int strikeBlinkPass=0;  //pass counter for LED on/off time
 int strikeBlinkCount=0; //blink counter for LED on/off time
-float sensitivity=1.02;  //successive readings have to increase by at least this factor to register as a strike
+float sensitivity=1.01;  //successive readings have to increase by at least this factor to register as a strike
 unsigned long strikes[MAX_STRIKES]; //strike log
+boolean done=false;
 
 int readPointer=0;
 int readHistory[]={0,0,0,0,0,0,0,0,0,0};
 
 char usage[] PROGMEM = "\n\rUsage:"
-                      "\n\r1 = GET STATUS -print relevant variables"
-                      "\n\r2 = GET HOUR - print the number of strikes in the past hour"
-	              "\n\r3 = GET DAY -print the number of strikes in the past 24 hours"
+          "\n\r1 = GET STATUS -print relevant variables"
+          "\n\r2 = GET HOUR - print the number of strikes in the past hour"
+	        "\n\r3 = GET DAY -print the number of strikes in the past 24 hours"
 		      "\n\r4 = GET WEEK -print the number of strikes in the past 7 days"
 		      "\n\r5 = GET MONTH -print the number of strikes in the past 30 days"
 		      "\n\r6 = GET ALL -print the number of strikes since the last reset"
@@ -53,6 +68,8 @@ char usage[] PROGMEM = "\n\rUsage:"
 		      "\n\r0 = FACTORY RESET -initialize all variables and counters"
                       "\n\rH = HELP - print this help text"
                       "\n\r";
+
+ESP8266WebServer server(80);
 
 void setup()
   {
@@ -64,16 +81,6 @@ void setup()
   
   dumpSettings(); //show all of the settings
   
-  
-  
-  //use the 5v default reference
-//  analogReference(DEFAULT);
-//  pinMode(ERROR_PIN,OUTPUT);
-
-  //initialze the sensors
-//  pinMode(PHOTO_PIN, INPUT);
-//  digitalWrite(PHOTO_PIN, LOW);   //disable the internal pullup resistor
-
   //initialze the outputs
   pinMode(LIGHTNING_LED_PIN, OUTPUT);  //we'll use the led to indicate detection
   digitalWrite(LIGHTNING_LED_PIN,HIGH); //High is off on the dorkboard
@@ -86,7 +93,45 @@ void setup()
   lastReading=thisReading;
   
   printProgStr(usage);
-  
+
+  //Get the WiFi going
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  Serial.print("Connecting");
+
+  // Wait for connection
+  while (WiFi.status() != WL_CONNECTED) 
+    {
+    delay(500);
+    Serial.print(".");
+    }
+
+  Serial.println("");
+  Serial.print("Connected to ");
+  Serial.println(ssid);
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+
+  if (MDNS.begin(MY_MDNS)) {
+    Serial.print("MDNS responder started as ");
+    Serial.print(MY_MDNS);
+    Serial.println(".local");
+  }
+
+  server.on("/", documentRoot);
+  server.on("/raw", []() 
+    {
+    Serial.println("Received request for raw data");
+    char tmp2[140];
+    server.send(200, "text/plain", getStatus(tmp2,false));
+    });
+  server.onNotFound(pageNotFound);
+  server.begin();
+  Serial.println("HTTP server started");
+
+//  Serial.print("setup() running on core ");
+//  Serial.println(xPortGetCoreID());
+
   //Ready to loop
   Serial.println("Ready.");
   Serial.println("");
@@ -94,9 +139,63 @@ void setup()
 
 void loop()
   {
+  server.handleClient();
+  MDNS.update();
+
+  //Don't read the sensor too fast or else it will disconnect the wifi
+  if(millis()%10 != 0)
+    return;
+       
   quiesce();
   doCommands();
   checkForStrike();
+  }
+
+
+void pageNotFound() 
+  {
+  String message = "File Not Found\n\n";
+  message += "URI: ";
+  message += server.uri();
+  message += "\nMethod: ";
+  message += (server.method() == HTTP_GET) ? "GET" : "POST";
+  message += "\nArguments: ";
+  message += server.args();
+  message += "\n";
+
+  for (uint8_t i = 0; i < server.args(); i++) 
+    {
+    message += " " + server.argName(i) + ": " + server.arg(i) + "\n";
+    }
+
+  server.send(404, "text/plain", message);
+  }
+
+
+void documentRoot() 
+  {
+  Serial.println("Received request for document root");
+  char temp[1024];
+
+  snprintf(temp, 1024,
+    "<html>\
+    <head>\
+      <meta http-equiv='refresh' content='15'/>\
+      <title>Lightning Detector</title>\
+      <style>\
+        body { background-color: #cccccc; font-family: Arial, Helvetica, Sans-Serif; Color: #000088; }\
+      </style>\
+    </head>\
+    <body>\
+      <h1>Optical Lightning Detector</h1>\
+      <p>Server Data: <br><br>");
+  char tmp2[512];
+  strcat(temp,getStatus(tmp2,true));
+  strcat(temp,
+        "</p>\
+    </body>\
+  </html>");
+  server.send(200, "text/html", temp);
   }
 
 
@@ -185,7 +284,7 @@ void doCommands()
   if (command==GET_STATUS) 
     {
     char buf[120];
-    Serial.println(getStatus(buf));
+    Serial.println(getStatus(buf,false));
     }
   else if (command==GET_HOUR) 
     {
@@ -292,26 +391,83 @@ int readCommand()
 //      Serial.println(F("That's not one of the choices."));
 //    }
 //  }
-  
+
+
 /*
-* Print all relevant variables to the serial port.
-*/
-char* getStatus(char* buf)
+ * Convert a long that represents age in milliseconds to a readable string
+ */
+String msToAge(long age)
   {
   char temp[11];
-  strcpy(buf,"Uptime: ");
-  strcat(buf,ltoa(millis(),temp,10));
-  strcat(buf,"\n\rIllumination: ");
-  strcat(buf,itoa(thisReading,temp,10));
-  strcat(buf,"\n\rCenter: ");
-  strcat(buf,itoa(errval,temp,10));
-  strcat(buf,"\n\rDelay: ");
-  strcat(buf,itoa(resetCounter,temp,10));
-  strcat(buf,"\n\rIn Strike: ");
-  strcat(buf,itoa(inStrike,temp,10));
-  strcat(buf,"\n\rTotal Strikes: ");
-  strcat(buf,itoa(strikeCount,temp,10));
-  strcat(buf,"  ");
+  int sec=age/1000;
+  int min=sec/60;
+  int hr=min/60;
+  int day=hr/24;
+  hr=hr%24;
+  min=min%60;
+  sec=sec%60;
+  
+  String msg="";
+  if (day<10)
+    msg+="0";
+  msg+=itoa(day,temp,10);
+  msg+=":";
+  if (hr<10)
+    msg+="0";
+  msg+=itoa(hr,temp,10);
+  msg+=":";
+  if (min<10)
+    msg+="0";
+  msg+=itoa(min,temp,10);
+  msg+=":";
+  if (sec<10)
+    msg+="0";
+  msg+=itoa(sec,temp,10);
+  return msg;
+  }
+
+/*
+* Return a buffer with all relevant variables.
+*/
+char* getStatus(char* buf, boolean html)
+  {
+  String cret=html?HTML_CR:TEXT_CR;
+  char temp[11];
+  
+  String msg="Uptime: ";
+  msg+=msToAge(millis());
+  msg+=cret;
+  msg+="Illumination: ";
+  msg+=itoa(thisReading,temp,10);
+  msg+=cret;
+  msg+="Center: ";
+  msg+=itoa(errval,temp,10);
+  msg+=cret;
+  msg+="Delay: ";
+  msg+=itoa(resetCounter,temp,10);
+  msg+=cret;
+  msg+="In Strike: ";
+  msg+=itoa(inStrike,temp,10);
+  msg+=cret;
+  msg+="Total Strikes: ";
+  msg+=itoa(strikeCount,temp,10);
+  msg+=cret;
+  
+  msg+="Strike age log (dd:hh:mm:ss):";
+  msg+=cret;
+  
+  long now=millis();
+  for (int i=strikeCount-1;i>=0;i--)
+    {
+    msg+=" ";
+    msg+=itoa(i,temp,10);
+    msg+=" - ";
+    msg+=msToAge(now-strikes[i]);
+    msg+=cret;
+    } 
+  
+  msg+="  ";  
+  strcpy(buf, msg.c_str());
   return buf;
   }
 
@@ -395,10 +551,11 @@ void reset_totals()
 //the ESP8266 is real jumpy.  It stores the value in the global thisReading variable.
 int readSensor()
   {
-  thisReading=(analogRead(PHOTO_PIN)
-              +analogRead(PHOTO_PIN)
-              +analogRead(PHOTO_PIN)
-              +analogRead(PHOTO_PIN))/4;
+  thisReading=analogRead(PHOTO_PIN);
+//  thisReading=(analogRead(PHOTO_PIN)
+//              +analogRead(PHOTO_PIN)
+//              +analogRead(PHOTO_PIN)
+//              +analogRead(PHOTO_PIN))/4;
   return thisReading;
   }
 
@@ -413,26 +570,15 @@ void quiesce()
     if (DEBUG)
       graphIt(thisReading);
       
-//    if ((thisReading>lastReading && errval>lastErrval) //a rising light level and rising error value, or
-//      ||(thisReading<lastReading && errval<lastErrval) //a dropping light level and dropping error value, or
-//      || errval==lastErrval)                           //error value hasn't changed
-      {                                                // then change the error level
-      errval=thisReading-MAX_READING/2;             // Calculate error value from midpoint of max possible input
-//      Serial.print(errval);
-//      Serial.print("\t");
-      if (errval>(lastErrval+MAX_SLEW_RATE))       // but limit the change to the maximum allowed
-        errval=lastErrval+MAX_SLEW_RATE;
-      else if (errval<(lastErrval-MAX_SLEW_RATE))
-        errval=lastErrval-MAX_SLEW_RATE;
-      if (errval<0) errval=0;                      // In no case go outside of one byte
-      if (errval>255) errval=255;
-//      Serial.print(thisReading);
-//      Serial.print("\t");
-//      Serial.print(lastErrval);
-//      Serial.print("\t");
-//      Serial.println(errval);
-      lastErrval=errval;
-      }
+    errval=thisReading-MAX_READING/2;            // Calculate error value from midpoint of max possible input
+    if (errval>(lastErrval+MAX_SLEW_RATE))       // but limit the change to the maximum allowed
+      errval=lastErrval+MAX_SLEW_RATE;
+    else if (errval<(lastErrval-MAX_SLEW_RATE))
+      errval=lastErrval-MAX_SLEW_RATE;
+    if (errval<0) errval=0;                      // In no case go outside of one byte
+    if (errval>255) errval=255;
+    lastErrval=errval;
+      
     analogWrite(ERROR_PIN, map(errval,0,255,0,MAX_READING)); //write the new value to the compensation circuit
     }
 
