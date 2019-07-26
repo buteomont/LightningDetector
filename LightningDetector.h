@@ -11,8 +11,10 @@
 #define MAX_STRIKES     1000    //size of strike log
 #define HOUR_MILLISECS 3600000L //60*60*1000
 #define DAY_MILLISECS 86400000L //24*60*60*1000
-#define MIN_STRIKE_WIDTH 15     //Strike lasts at least this long
-#define MAX_STRIKE_WIDTH 100    //But no longer than this
+#define MIN_STRIKE_WIDTH 2      //Strike lasts at least this many milliseconds
+#define MAX_STRIKE_WIDTH 50     //But no longer than this
+#define HTML_CR         "<br>"
+#define TEXT_CR         "\n\r"
 
 //Commands
 #define GET_STATUS    1  //print relevant variables
@@ -33,5 +35,6 @@
 
 //Strictly for ESP32
 //#define analogWrite ledcWrite //comment this out for ESP8266
+#define MY_MDNS   "lightning" //this will be our server name
 
 #define DEBUG false  //to show plotter graph
