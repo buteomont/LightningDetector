@@ -45,15 +45,15 @@ int errval=128; //half way
 int lastErrval=512;
 int resetCounter=0;
 int strikeCount=0;
-boolean inStrike=false; //strike is in progress
 int strikeBlinkPass=0;  //pass counter for LED on/off time
 int strikeBlinkCount=0; //blink counter for LED on/off time
-float sensitivity=1.01;  //successive readings have to increase by at least this factor to register as a strike
-unsigned long strikes[MAX_STRIKES]; //strike log
+int sensitivity=10;  //successive readings have to be at least this much larger than the last reading to register as a strike
+unsigned long strikes[MAX_STRIKES];       //strike time log
+unsigned int strikeIntensity[MAX_STRIKES];//strike brightness log
 boolean done=false;
-
-int readPointer=0;
-int readHistory[]={0,0,0,0,0,0,0,0,0,0};
+int strikeStage=0;   //to keep track of which part of the strike we are working
+long strikeWaitTime;
+int intensity;        //record the intensity of the strike for the log
 
 char usage[] PROGMEM = "\n\rUsage:"
           "\n\r1 = GET STATUS -print relevant variables"
@@ -76,7 +76,7 @@ void setup()
   //Set up the serial communications
   Serial.begin(115200);
   Serial.setTimeout(10000);
-  
+    
 //  loadSettings(); //load the editable settings from eeprom
   
   dumpSettings(); //show all of the settings
@@ -119,15 +119,18 @@ void setup()
   }
 
   server.on("/", documentRoot);
-  server.on("/raw", []() 
+  server.on("/json", sendJson);
+  server.on("/text", sendText); 
+  server.on("/bad", []() 
     {
-    Serial.println("Received request for raw data");
-    char tmp2[140];
-    server.send(200, "text/plain", getStatus(tmp2,false));
+    Serial.println("Received request for bad data");
+    server.send(200, "text/plain", "This is a bad URL. Don't ever do that again.");
+    Serial.println("Response sent for bad data");
     });
   server.onNotFound(pageNotFound);
   server.begin();
   Serial.println("HTTP server started");
+  strikeWaitTime=millis(); //initialize the delay counter
 
 //  Serial.print("setup() running on core ");
 //  Serial.println(xPortGetCoreID());
@@ -143,12 +146,13 @@ void loop()
   MDNS.update();
 
   //Don't read the sensor too fast or else it will disconnect the wifi
-  if(millis()%10 != 0)
+  if(millis()%5 != 0)
     return;
-       
-  quiesce();
-  doCommands();
-  checkForStrike();
+  else
+    {     
+//    doCommands();
+    checkForStrike();
+    }
   }
 
 
@@ -171,6 +175,35 @@ void pageNotFound()
   server.send(404, "text/plain", message);
   }
 
+void sendText()
+  {
+  Serial.println("Received request for text data");
+  WiFiClient client=server.client();
+  client.write("HTTP/1.1 200 OK\r\n \
+            Content-Type: text/plain\r\n \
+            Connection: close\r\n \
+            \n\n\n");
+  client.write(getStatus(TYPE_TEXT).c_str());
+  client.write("\r\n\r\n");
+  client.flush();
+  client.stop();
+  
+  Serial.println("Response sent for text data");
+  };
+
+
+void sendJson()
+  {
+  Serial.println("Received request for JSON data");
+  
+  server.sendHeader("content-type", "text/json", true);
+  server.sendHeader("server", "linux", false);
+  server.sendHeader("status", "200", false);
+  
+  server.sendContent(getStatus(TYPE_JSON));
+  
+  Serial.println("Response sent for JSON data");
+  }
 
 void documentRoot() 
   {
@@ -196,46 +229,94 @@ void documentRoot()
     </body>\
   </html>");
   server.send(200, "text/html", temp);
+  Serial.println("Response sent for document root");
   }
 
-
+/*
+ * Check to see if we are in a strike.  There are four "zones": 
+ * 0 - No strike detected
+ * 1 - Increase in brightness above a threshold
+ * 2 - Maintain that brightness for a set period
+ * 3 - Drop the brightness before a set time has passed
+ */
 void checkForStrike()
   {
-  if (!inStrike)  //skip it if we are already counting at a strike
+  switch(strikeStage)
     {
-    readSensor();
-    if (thisReading > (lastReading+5)*sensitivity) //Is this reading brighter than the last one?
-                                                   // (+5 is for when it's really really dark)
-      {
-      //make sure it's really a strike.  Wait a bit and look again
-      delay(MIN_STRIKE_WIDTH);
-      readSensor();
-      if (thisReading > (lastReading+5)*sensitivity) //still going?
+    case 0:
+//        Serial.print("0/");
+//        Serial.print(lastReading);
+//        Serial.print("/");
+//        Serial.print(millis());
+//        Serial.print("/");
+//        Serial.println(strikeWaitTime);
+      readSensor(); //take a reading
+      if (thisReading > lastReading+sensitivity) //Is this reading brighter than the last one?
         {
-        delay (MAX_STRIKE_WIDTH-MIN_STRIKE_WIDTH); //Someone may have just turned on the light
-        readSensor();
-        if (thisReading > (lastReading+5)*sensitivity) //should not still be going
-          noStrike();  // nope, too long 
-        else strike(); // yep, record it    
+        strikeStage++;   //may be a real strike, go to stage 1
+        strikeWaitTime=millis()+MIN_STRIKE_WIDTH;
+        Serial.print("Strike going to stage 1 - ");
+        Serial.print(lastReading);
+        Serial.print("/");
+        Serial.println(thisReading);
         }
-      else noStrike();
-      }
-    else noStrike();
-    
-    lastReading=thisReading;
+      else
+        noStrike();
+      break;
+      
+    case 1:
+      //make sure it's really a strike.  Wait a bit and look again       
+      if (millis()>=strikeWaitTime) 
+        {
+        readSensor();
+        if (thisReading > lastReading+sensitivity) //still going?
+          {
+          strikeStage++;   //looking like a real strike, go to stage 2
+          strikeWaitTime=millis()+MAX_STRIKE_WIDTH;
+          Serial.print("Strike going to stage 2 - ");
+          Serial.print(lastReading);
+          Serial.print("/");
+          Serial.println(thisReading);
+          intensity=thisReading-lastReading; //save the brightness
+          }
+        else 
+          noStrike(); // nope, too long
+        }
+        break;
+
+      case 2:
+        if (millis()>=strikeWaitTime) 
+          {
+          readSensor();
+          if (thisReading <= lastReading+sensitivity) //should not still be going, maybe someone turned on the light
+            {
+            strikeStage++;   //Take us to default case until this strike is over
+            Serial.print("Strike confirmed! - ");
+            Serial.print(lastReading);
+            Serial.print("/");
+            Serial.println(thisReading);
+            strike(intensity);  //yep, record it    
+            }
+          else 
+            noStrike(); // nope, too long
+          }
+          break;
+          
+    default:
+      noStrike(); // nope, too long
     }
-  else noStrike();
   }
+  
 
 // Record a strike
-void strike()
+void strike(unsigned int brightness)
   {
   digitalWrite(LIGHTNING_LED_PIN, LOW);//turn on the blue LED
   digitalWrite(RELAY_PIN, HIGH);    //turn on the relay
   resetCounter=RESET_DELAY;        //"debounce" the strike
   int index=strikeCount++ % MAX_STRIKES;
   strikes[index]=millis();  //record the time of this strike
-  inStrike=true;
+  strikeIntensity[index]=brightness;
   }
 
 //Not a strike this time
@@ -244,13 +325,16 @@ void noStrike()
   if (resetCounter>0)
     {
     resetCounter--;
-    delay(10);
+    delay(1);
     }
   else //turn off the LED and relay
     {
     digitalWrite(LIGHTNING_LED_PIN, HIGH);
     digitalWrite(RELAY_PIN, LOW);
-    inStrike=false;
+    lastReading=thisReading;
+    if (strikeStage>0)
+      Serial.println("Strike resetting to stage 0");
+    strikeStage=0;   //Reset for the next strike
     }
   }
   
@@ -366,31 +450,6 @@ int readCommand()
     }
   return command;
   }
-  
-///*
-//* Ask which setting to change and then change it in eeprom and memory
-//*/
-//void changeSetting()
-//  {
-//  Serial.println(F("\n\r1-Sensitivity\n\r2-Slew Rate\n\r3-Reset Delay\n\r:"));
-//  char cmd=Serial.read(); //which setting?
-//  Serial.println(cmd);    //echo it
-//  cmd-=48; //convert to a number
-//  
-//  switch(cmd)
-//    {
-//    case 1:
-//      Serial.println(F("Enter a number between 1 and 2:"));
-//      char buf[6];
-//      Serial.readBytesUntil('\n',buf,5);
-//      
-//      break;
-//    case 2:
-//    case 3:
-//    default:
-//      Serial.println(F("That's not one of the choices."));
-//    }
-//  }
 
 
 /*
@@ -446,23 +505,23 @@ char* getStatus(char* buf, boolean html)
   msg+="Delay: ";
   msg+=itoa(resetCounter,temp,10);
   msg+=cret;
-  msg+="In Strike: ";
-  msg+=itoa(inStrike,temp,10);
-  msg+=cret;
   msg+="Total Strikes: ";
   msg+=itoa(strikeCount,temp,10);
   msg+=cret;
   
-  msg+="Strike age log (dd:hh:mm:ss):";
+  msg+=cret;
+  msg+="Strike age log (dd:hh:mm:ss, intensity):";
   msg+=cret;
   
   long now=millis();
   for (int i=strikeCount-1;i>=0;i--)
     {
     msg+=" ";
-    msg+=itoa(i,temp,10);
+    msg+=itoa(i+1,temp,10);
     msg+=" - ";
     msg+=msToAge(now-strikes[i]);
+    msg+=", ";
+    msg+=itoa(strikeIntensity[i],temp,10);
     msg+=cret;
     } 
   
@@ -470,6 +529,82 @@ char* getStatus(char* buf, boolean html)
   strcpy(buf, msg.c_str());
   return buf;
   }
+
+/*
+ * Format a name value pair
+ */
+String fmt(String name, String value, int type, boolean lastOne)
+  {
+  String result;
+  String quote=(strncmp(value.c_str(), "[", 1)==0)?"":"\""; //don't quote if it's an array
+  switch(type)
+    {
+    case TYPE_TEXT:
+      result=name+": "+value+"\n";
+      break;
+    case TYPE_HTML:
+    case TYPE_TABLE: //later
+      result=name+": "+value+"<br>";
+      break;
+    case TYPE_JSON:
+      result="\""+name+"\""+": "+quote+value+quote+(lastOne?"":",");
+      break;
+    default:
+      result=name+": "+value+"\n";
+      break;
+    }
+    return result;
+  }
+
+/*
+* Return a string with all relevant variables.
+* Type is 1 for text, 2 for HTML, 3 for JSON
+*/
+String getStatus(int type)
+  {
+  char temp[11];
+
+  String msg=type==TYPE_JSON?"{\"lightning\":{":"";
+  msg+=fmt("Uptime",msToAge(millis()),type,false);
+
+  msg+=fmt("Illumination",itoa(thisReading,temp,10),type,false);
+  msg+=fmt("Center",itoa(errval,temp,10),type,false);
+  msg+=fmt("Delay",itoa(resetCounter,temp,10),type,false);
+  msg+=fmt("Total Strikes",itoa(strikeCount,temp,10),type,false);
+  String lbr=type==TYPE_JSON?"[":""; //left bracket
+  String rbr=type==TYPE_JSON?"]":""; //you know
+  msg+=fmt("Strike Log",lbr+getStrikeLog(type)+rbr,type,true);
+  msg+=type==TYPE_JSON?"}}":"";
+  return msg;
+  }
+
+String getStrikeLog(int type)
+  {
+  char temp[11];
+  String msg="";
+  long now=millis();
+  boolean lastEntry=false;
+  for (int i=strikeCount-1;i>=0;i--)
+    {
+    lastEntry=(i==0);
+      
+    if (type==TYPE_JSON)
+      {
+      msg+="{"+fmt(msToAge(now-strikes[i]),itoa(strikeIntensity[i],temp,10),type,true)+"}";
+      msg+=(lastEntry?"":",");
+      }
+    else
+      {
+      msg+=itoa(i+1,temp,10);
+      msg+=" - ";
+      msg+=fmt(msToAge(now-strikes[i]),itoa(strikeIntensity[i],temp,10),type,lastEntry);
+      }
+    } 
+  
+  return msg;
+  }
+
+
 
 /*
 * Return the number of strikes recorded in the past (age) milliseconds
@@ -556,6 +691,8 @@ int readSensor()
 //              +analogRead(PHOTO_PIN)
 //              +analogRead(PHOTO_PIN)
 //              +analogRead(PHOTO_PIN))/4;
+//  if (thisReading<2)  //minimum value
+//    thisReading=2;
   return thisReading;
   }
 
@@ -566,10 +703,6 @@ int readSensor()
 void quiesce()
     {
     readSensor();
-
-    if (DEBUG)
-      graphIt(thisReading);
-      
     errval=thisReading-MAX_READING/2;            // Calculate error value from midpoint of max possible input
     if (errval>(lastErrval+MAX_SLEW_RATE))       // but limit the change to the maximum allowed
       errval=lastErrval+MAX_SLEW_RATE;
@@ -581,20 +714,6 @@ void quiesce()
       
     analogWrite(ERROR_PIN, map(errval,0,255,0,MAX_READING)); //write the new value to the compensation circuit
     }
-
-  void graphIt(int reading)
-    {
-    readPointer++;
-    if (readPointer>9)
-      readPointer=0;
-    readHistory[readPointer]=reading;
-    float readTotal=0;
-    for (int i=0;i<10;i++)
-      readTotal+=readHistory[i];
-    Serial.println(readTotal/10); //for the serial plotter
-//    Serial.println(reading); //for the serial plotter
-    }
-
     
 // given a PROGMEM string, use Serial.print() to send it out
 void printProgStr(const char str[])
