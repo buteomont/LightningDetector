@@ -44,12 +44,12 @@ int thisReading = 0;
 int errval=128; //half way
 int lastErrval=512;
 int resetCounter=0;
-int strikeCount=0;
 int strikeBlinkPass=0;  //pass counter for LED on/off time
 int strikeBlinkCount=0; //blink counter for LED on/off time
 int sensitivity=10;  //successive readings have to be at least this much larger than the last reading to register as a strike
 unsigned long strikes[MAX_STRIKES];       //strike time log
 unsigned int strikeIntensity[MAX_STRIKES];//strike brightness log
+int strikeCount=0;  //number of strikes in the log
 boolean done=false;
 int strikeStage=0;   //to keep track of which part of the strike we are working
 long strikeWaitTime;
@@ -150,7 +150,6 @@ void loop()
     return;
   else
     {     
-//    doCommands();
     checkForStrike();
     }
   }
@@ -178,15 +177,8 @@ void pageNotFound()
 void sendText()
   {
   Serial.println("Received request for text data");
-  WiFiClient client=server.client();
-  client.write("HTTP/1.1 200 OK\r\n \
-            Content-Type: text/plain\r\n \
-            Connection: close\r\n \
-            \n\n\n");
-  client.write(getStatus(TYPE_TEXT).c_str());
-  client.write("\r\n\r\n");
-  client.flush();
-  client.stop();
+
+  server.send(200, "text/plain",getStatus(TYPE_TEXT));
   
   Serial.println("Response sent for text data");
   };
@@ -196,22 +188,15 @@ void sendJson()
   {
   Serial.println("Received request for JSON data");
   
-  server.sendHeader("content-type", "text/json", true);
-  server.sendHeader("server", "linux", false);
-  server.sendHeader("status", "200", false);
-  
-  server.sendContent(getStatus(TYPE_JSON));
-  
+  server.send(200, "text/plain",getStatus(TYPE_JSON));
+
   Serial.println("Response sent for JSON data");
   }
 
 void documentRoot() 
   {
   Serial.println("Received request for document root");
-  char temp[1024];
-
-  snprintf(temp, 1024,
-    "<html>\
+  String page="<html>\
     <head>\
       <meta http-equiv='refresh' content='15'/>\
       <title>Lightning Detector</title>\
@@ -221,14 +206,12 @@ void documentRoot()
     </head>\
     <body>\
       <h1>Optical Lightning Detector</h1>\
-      <p>Server Data: <br><br>");
-  char tmp2[512];
-  strcat(temp,getStatus(tmp2,true));
-  strcat(temp,
-        "</p>\
+      <p>Server Data: <br><br>"
+      +getStatus(TYPE_HTML)
+      +"</p>\
     </body>\
-  </html>");
-  server.send(200, "text/html", temp);
+  </html>";
+  server.send(200, "text/html", page);
   Serial.println("Response sent for document root");
   }
 
@@ -359,66 +342,6 @@ void dumpSettings()
   Serial.println(RESET_DELAY);
   }
 
-/* 
-* See if any commands are given.  Process them if so.
-*/
-void doCommands()
-  {
-  int command=readCommand();
-  if (command==GET_STATUS) 
-    {
-    char buf[120];
-    Serial.println(getStatus(buf,false));
-    }
-  else if (command==GET_HOUR) 
-    {
-    Serial.print(getRecent(HOUR_MILLISECS),DEC); //A day's worth of milliseconds
-    Serial.println(F(" strikes in the past hour"));
-    }
-  else if (command==GET_DAY) 
-    {
-    Serial.print(getRecent(DAY_MILLISECS),DEC); //A day's worth of milliseconds
-    Serial.println(F(" strikes in the past 24 hours"));
-    }
-  else if (command==GET_WEEK) 
-    {
-    Serial.print(getRecent(DAY_MILLISECS*7),DEC); //A week's worth of milliseconds
-    Serial.println(F(" strikes in the past 7 days"));
-    }
-  else if (command==GET_MONTH) 
-    {
-    Serial.print(getRecent(DAY_MILLISECS*30L),DEC); //A week's worth of milliseconds
-    Serial.println(F(" strikes in the past 30 days"));
-    }
-  else if (command==GET_ALL) 
-    {
-    Serial.print(strikeCount,DEC);
-    Serial.println(F(" strikes since last reset"));
-    }
-//  else if (command==CHANGE_SETTING) 
-//    {
-//    changeSetting();
-//    }
-  else if (command==RESET) 
-    {
-    Serial.println(F("Resetting..."));
-    delay(1000);
-    ESP.restart(); //asm volatile ("jmp 0"); //pseudo software reset
-    }   
-  else if (command==RESET_TOTALS) 
-    {
-    reset_totals();
-    Serial.println(F("All accumulators were reset."));
-    }
-  else if (command==FACTORY_RESET) 
-    {
-    reset_totals();
-//    init_variables();
-    Serial.println(F("Everything reset to factory defaults."));
-    delay(1000);
-    ESP.restart(); //asm volatile ("jmp 0"); //pseudo software reset    
-    }
-  }
   
 /*
 * Read, validate, and return a command from the serial port.
@@ -485,50 +408,6 @@ String msToAge(long age)
   return msg;
   }
 
-/*
-* Return a buffer with all relevant variables.
-*/
-char* getStatus(char* buf, boolean html)
-  {
-  String cret=html?HTML_CR:TEXT_CR;
-  char temp[11];
-  
-  String msg="Uptime: ";
-  msg+=msToAge(millis());
-  msg+=cret;
-  msg+="Illumination: ";
-  msg+=itoa(thisReading,temp,10);
-  msg+=cret;
-  msg+="Center: ";
-  msg+=itoa(errval,temp,10);
-  msg+=cret;
-  msg+="Delay: ";
-  msg+=itoa(resetCounter,temp,10);
-  msg+=cret;
-  msg+="Total Strikes: ";
-  msg+=itoa(strikeCount,temp,10);
-  msg+=cret;
-  
-  msg+=cret;
-  msg+="Strike age log (dd:hh:mm:ss, intensity):";
-  msg+=cret;
-  
-  long now=millis();
-  for (int i=strikeCount-1;i>=0;i--)
-    {
-    msg+=" ";
-    msg+=itoa(i+1,temp,10);
-    msg+=" - ";
-    msg+=msToAge(now-strikes[i]);
-    msg+=", ";
-    msg+=itoa(strikeIntensity[i],temp,10);
-    msg+=cret;
-    } 
-  
-  msg+="  ";  
-  strcpy(buf, msg.c_str());
-  return buf;
-  }
 
 /*
  * Format a name value pair
@@ -563,17 +442,24 @@ String fmt(String name, String value, int type, boolean lastOne)
 String getStatus(int type)
   {
   char temp[11];
-
+  String cret=type==TYPE_HTML?"<br>":type==TYPE_JSON?"":"\n";
   String msg=type==TYPE_JSON?"{\"lightning\":{":"";
+  
   msg+=fmt("Uptime",msToAge(millis()),type,false);
-
+  msg+=fmt("Sensitivity",itoa(sensitivity,temp,10),type,false);
   msg+=fmt("Illumination",itoa(thisReading,temp,10),type,false);
-  msg+=fmt("Center",itoa(errval,temp,10),type,false);
-  msg+=fmt("Delay",itoa(resetCounter,temp,10),type,false);
+
+  if (type!=TYPE_JSON)
+    msg+=cret+cret+"Strike Data:"+cret+cret;
+  msg+=fmt("Past hour",itoa(getRecent(HOUR_MILLISECS),temp,10),type,false);
+  msg+=fmt("Past 24 hours",itoa(getRecent(DAY_MILLISECS),temp,10),type,false);
+  msg+=fmt("Past 7 days",itoa(getRecent(DAY_MILLISECS*7),temp,10),type,false);
+  msg+=fmt("Past 30 days",itoa(getRecent(DAY_MILLISECS*30L),temp,10),type,false);
   msg+=fmt("Total Strikes",itoa(strikeCount,temp,10),type,false);
-  String lbr=type==TYPE_JSON?"[":""; //left bracket
+  
+  String lbr=type==TYPE_JSON?"[":type==TYPE_HTML?"<br>":"\n"; //left bracket
   String rbr=type==TYPE_JSON?"]":""; //you know
-  msg+=fmt("Strike Log",lbr+getStrikeLog(type)+rbr,type,true);
+  msg+=fmt(cret+"Strike Log",lbr+getStrikeLog(type)+rbr,type,true);
   msg+=type==TYPE_JSON?"}}":"";
   return msg;
   }
@@ -587,20 +473,20 @@ String getStrikeLog(int type)
   for (int i=strikeCount-1;i>=0;i--)
     {
     lastEntry=(i==0);
-      
+    int j=i % MAX_STRIKES; 
+     
     if (type==TYPE_JSON)
       {
-      msg+="{"+fmt(msToAge(now-strikes[i]),itoa(strikeIntensity[i],temp,10),type,true)+"}";
+      msg+="{"+fmt(msToAge(now-strikes[j]),itoa(strikeIntensity[j],temp,10),type,true)+"}";
       msg+=(lastEntry?"":",");
       }
     else
       {
       msg+=itoa(i+1,temp,10);
       msg+=" - ";
-      msg+=fmt(msToAge(now-strikes[i]),itoa(strikeIntensity[i],temp,10),type,lastEntry);
+      msg+=fmt(msToAge(now-strikes[j]),itoa(strikeIntensity[j],temp,10),type,lastEntry);
       }
     } 
-  
   return msg;
   }
 
