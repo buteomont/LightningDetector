@@ -55,19 +55,8 @@ int strikeStage=0;   //to keep track of which part of the strike we are working
 long strikeWaitTime;
 int intensity;        //record the intensity of the strike for the log
 
-char usage[] PROGMEM = "\n\rUsage:"
-          "\n\r1 = GET STATUS -print relevant variables"
-          "\n\r2 = GET HOUR - print the number of strikes in the past hour"
-	        "\n\r3 = GET DAY -print the number of strikes in the past 24 hours"
-		      "\n\r4 = GET WEEK -print the number of strikes in the past 7 days"
-		      "\n\r5 = GET MONTH -print the number of strikes in the past 30 days"
-		      "\n\r6 = GET ALL -print the number of strikes since the last reset"
-		      "\n\r7 = CHANGE SETTING -change the sensitivity, slew rate, or reset delay"
-		      "\n\r8 = RESET -same as pressing the reset button"
-		      "\n\r9 = RESET TOTALS -reset the strike counters"
-		      "\n\r0 = FACTORY RESET -initialize all variables and counters"
-                      "\n\rH = HELP - print this help text"
-                      "\n\r";
+static const char configPage[] PROGMEM = "This is a string stored in flash"
+                                         "\nThis also";
 
 ESP8266WebServer server(80);
 
@@ -92,8 +81,6 @@ void setup()
   thisReading=analogRead(PHOTO_PIN);
   lastReading=thisReading;
   
-  printProgStr(usage);
-
   //Get the WiFi going
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
@@ -120,7 +107,8 @@ void setup()
 
   server.on("/", documentRoot);
   server.on("/json", sendJson);
-  server.on("/text", sendText); 
+  server.on("/text", sendText);
+  server.on("/configure", setConfig); 
   server.on("/bad", []() 
     {
     Serial.println("Received request for bad data");
@@ -154,9 +142,29 @@ void loop()
     }
   }
 
+void setConfig()
+  {
+  Serial.println("Received set config request");
+  if (server.hasArg("plain")== false) //Check if body received
+    {
+    server.send(200, "text/plain", configPage);
+    Serial.println("Configure page sent.");
+    }
+  else
+    {
+    String msg = "Body received:\n";
+    msg+=server.arg("plain");
+    msg+="\n";
+    server.send(200, "text/plain", msg);
+    Serial.println("POST data: "+server.arg("plain"));
+    }
+  Serial.println("Response sent for set config request");
+  return;
+  }
 
 void pageNotFound() 
   {
+  Serial.println("Received invalid URL");
   String message = "File Not Found\n\n";
   message += "URI: ";
   message += server.uri();
@@ -172,6 +180,7 @@ void pageNotFound()
     }
 
   server.send(404, "text/plain", message);
+  Serial.println("Code 404 response sent.");
   }
 
 void sendText()
@@ -346,34 +355,6 @@ void dumpSettings()
 /*
 * Read, validate, and return a command from the serial port.
 */
-int readCommand()
-  {
-  int command=-1;
-  if (Serial.available())
-    {
-    char cmd=Serial.read(); //get a command
-    Serial.println(cmd);    //echo it back to sender
-    
-    cmd-=48; //convert to number
-   
-    if ( cmd!=GET_STATUS
-      && cmd!=GET_HOUR 
-      && cmd!=GET_DAY
-      && cmd!=GET_WEEK
-      && cmd!=GET_MONTH
-      && cmd!=GET_ALL
-      && cmd!=CHANGE_SETTING
-      && cmd!=RESET
-      && cmd!=RESET_TOTALS
-      && cmd!=FACTORY_RESET)
-      {
-      printProgStr(usage);
-      }
-    else command=cmd; //convert from ASCII to number      
-    }
-  return command;
-  }
-
 
 /*
  * Convert a long that represents age in milliseconds to a readable string
@@ -450,7 +431,7 @@ String getStatus(int type)
   msg+=fmt("Illumination",itoa(thisReading,temp,10),type,false);
 
   if (type!=TYPE_JSON)
-    msg+=cret+cret+"Strike Data:"+cret+cret;
+    msg+=cret+"Strike Data:"+cret+cret;
   msg+=fmt("Past hour",itoa(getRecent(HOUR_MILLISECS),temp,10),type,false);
   msg+=fmt("Past 24 hours",itoa(getRecent(DAY_MILLISECS),temp,10),type,false);
   msg+=fmt("Past 7 days",itoa(getRecent(DAY_MILLISECS*7),temp,10),type,false);
