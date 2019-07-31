@@ -44,8 +44,6 @@ int thisReading = 0;
 int errval=128; //half way
 int lastErrval=512;
 int resetCounter=0;
-int strikeBlinkPass=0;  //pass counter for LED on/off time
-int strikeBlinkCount=0; //blink counter for LED on/off time
 int sensitivity=10;  //successive readings have to be at least this much larger than the last reading to register as a strike
 unsigned long strikes[MAX_STRIKES];       //strike time log
 unsigned int strikeIntensity[MAX_STRIKES];//strike brightness log
@@ -55,8 +53,33 @@ int strikeStage=0;   //to keep track of which part of the strike we are working
 long strikeWaitTime;
 int intensity;        //record the intensity of the strike for the log
 
-static const char configPage[] PROGMEM = "This is a string stored in flash"
-                                         "\nThis also";
+static const char configScript[] = "function showSensitivity() {"
+      "document.getElementById(\"sens\").innerHTML=document.getElementById(\"sensitivity\").value;}";
+      
+static const char configPage[] PROGMEM = "<!DOCTYPE html>"
+      "<html>"
+      "<head>"
+      "<title>Lightning Detector Configuration</title>"
+      "<meta name=\"generator\" content=\"Bluefish 2.2.10\" >"
+      "<meta http-equiv=\"content-type\" content=\"text/html; charset=UTF-8\">"
+      "<script src=\"/config-script.js\"></script>"
+      "</head>"
+      "<body>"
+      "<b><div style=\"text-align: center;\"><h1>Lightning Detector Configuration</h1></div></b>"
+      "<br><div id=\"message\"></div><br>"
+      "<form action=\"/configure\" method=\"post\">"
+      "Sensitivity: <sup><span style=\"font-size: smaller;\">(Max)</span></sup> "
+      " <input type=\"range\" name=\"sensitivity\" id=\"sensitivity\" value=\"10\" min=\"1\" max=\"25\" step=\"1\""
+      " onchange=\"showSensitivity()\">"
+      " <sup><span style=\"font-size: smaller;\">(Min)</span></sup>"
+      " <div align=\"left\" style=\"display: inline; \" id=\"sens\"></div>"
+      "<br>"
+      "<script> showSensitivity();</script><br><br>"
+      "<input type=\"submit\" name=\"Update Configuration\" value=\"Update\">"
+      "</form>"
+      "</body>"
+      "</html>"
+      ;
 
 ESP8266WebServer server(80);
 
@@ -108,7 +131,11 @@ void setup()
   server.on("/", documentRoot);
   server.on("/json", sendJson);
   server.on("/text", sendText);
-  server.on("/configure", setConfig); 
+  server.on("/configure", setConfig);
+  server.on("/config-script.js",[]()
+    {
+    server.send(200,"application/javascript",configScript);
+    });
   server.on("/bad", []() 
     {
     Serial.println("Received request for bad data");
@@ -147,15 +174,12 @@ void setConfig()
   Serial.println("Received set config request");
   if (server.hasArg("plain")== false) //Check if body received
     {
-    server.send(200, "text/plain", configPage);
+    server.send(200, "text/html", configPage);
     Serial.println("Configure page sent.");
     }
   else
     {
-    String msg = "Body received:\n";
-    msg+=server.arg("plain");
-    msg+="\n";
-    server.send(200, "text/plain", msg);
+    server.send(200, "text/html", configPage); //send them back to the configuration page
     Serial.println("POST data: "+server.arg("plain"));
     }
   Serial.println("Response sent for set config request");
