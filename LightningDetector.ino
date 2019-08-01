@@ -53,33 +53,30 @@ int strikeStage=0;   //to keep track of which part of the strike we are working
 long strikeWaitTime;
 int intensity;        //record the intensity of the strike for the log
 
-static const char configScript[] = "function showSensitivity() {"
-      "document.getElementById(\"sens\").innerHTML=document.getElementById(\"sensitivity\").value;}";
-      
 static const char configPage[] PROGMEM = "<!DOCTYPE html>"
-      "<html>"
-      "<head>"
-      "<title>Lightning Detector Configuration</title>"
-      "<meta name=\"generator\" content=\"Bluefish 2.2.10\" >"
-      "<meta http-equiv=\"content-type\" content=\"text/html; charset=UTF-8\">"
-      "<script src=\"/config-script.js\"></script>"
-      "</head>"
-      "<body>"
-      "<b><div style=\"text-align: center;\"><h1>Lightning Detector Configuration</h1></div></b>"
-      "<br><div id=\"message\"></div><br>"
-      "<form action=\"/configure\" method=\"post\">"
-      "Sensitivity: <sup><span style=\"font-size: smaller;\">(Max)</span></sup> "
-      " <input type=\"range\" name=\"sensitivity\" id=\"sensitivity\" value=\"10\" min=\"1\" max=\"25\" step=\"1\""
-      " onchange=\"showSensitivity()\">"
-      " <sup><span style=\"font-size: smaller;\">(Min)</span></sup>"
-      " <div align=\"left\" style=\"display: inline; \" id=\"sens\"></div>"
-      "<br>"
-      "<script> showSensitivity();</script><br><br>"
-      "<input type=\"submit\" name=\"Update Configuration\" value=\"Update\">"
-      "</form>"
-      "</body>"
-      "</html>"
-      ;
+    "<html>"
+    "<head>"
+    "<title>Lightning Detector Configuration</title>"
+    "<meta name=\"generator\" content=\"Bluefish 2.2.10\" >"
+    "<meta http-equiv=\"content-type\" content=\"text/html; charset=UTF-8\">"
+    "<script>function showSensitivity() {"
+    "document.getElementById(\"sens\").innerHTML=document.getElementById(\"sensitivity\").value;}</script>"
+    "</head>"
+    "<body>"
+    "<b><div style=\"text-align: center;\"><h1>Lightning Detector Configuration</h1></div></b>"
+    "<br><div id=\"message\">%s</div><br>"
+    "<form action=\"/configure\" method=\"post\">"
+    "Sensitivity: <sup><span style=\"font-size: smaller;\">(Max)</span></sup> "
+    " <input type=\"range\" name=\"sensitivity\" id=\"sensitivity\" value=\"%s\" min=\"1\" max=\"25\" step=\"1\""
+    " onchange=\"showSensitivity()\">"
+    " <sup><span style=\"font-size: smaller;\">(Min)</span></sup>"
+    " <div align=\"left\" style=\"display: inline; \" id=\"sens\"></div>"
+    "<br>"
+    "<script> showSensitivity();</script><br><br>"
+    "<input type=\"submit\" name=\"Update Configuration\" value=\"Update\">"
+    "</form>"
+    "</body>"
+    "</html>";
 
 ESP8266WebServer server(80);
 
@@ -132,10 +129,6 @@ void setup()
   server.on("/json", sendJson);
   server.on("/text", sendText);
   server.on("/configure", setConfig);
-  server.on("/config-script.js",[]()
-    {
-    server.send(200,"application/javascript",configScript);
-    });
   server.on("/bad", []() 
     {
     Serial.println("Received request for bad data");
@@ -169,17 +162,29 @@ void loop()
     }
   }
 
+char* getConfigPage(String message)
+  {
+  char buf[strlen_P((PGM_P)FPSTR(configPage))*2]; //don't know why it has to be twice the size
+  char temp[11];
+  sprintf(buf,(PGM_P)FPSTR(configPage),
+              message.c_str(),
+              itoa(sensitivity,temp,10));
+  return buf;
+  }
+
 void setConfig()
   {
   Serial.println("Received set config request");
   if (server.hasArg("plain")== false) //Check if body received
     {
-    server.send(200, "text/html", configPage);
+    server.send(200, "text/html", getConfigPage(""));
     Serial.println("Configure page sent.");
     }
   else
     {
-    server.send(200, "text/html", configPage); //send them back to the configuration page
+    Serial.println("Setting sensitivity to "+server.arg("sensitivity"));
+    sensitivity=atoi(server.arg("sensitivity").c_str());
+    server.send(200, "text/html", getConfigPage("Configuration Updated")); //send them back to the configuration page
     Serial.println("POST data: "+server.arg("plain"));
     }
   Serial.println("Response sent for set config request");
@@ -239,7 +244,7 @@ void documentRoot()
     </head>\
     <body>\
       <h1>Optical Lightning Detector</h1>\
-      <p>Server Data: <br><br>"
+      <p><h2>Server Data:</h2>"
       +getStatus(TYPE_HTML)
       +"</p>\
     </body>\
@@ -269,6 +274,7 @@ void checkForStrike()
       readSensor(); //take a reading
       if (thisReading > lastReading+sensitivity) //Is this reading brighter than the last one?
         {
+        intensity=thisReading-lastReading; //save the brightness
         strikeStage++;   //may be a real strike, go to stage 1
         strikeWaitTime=millis()+MIN_STRIKE_WIDTH;
         Serial.print("Strike going to stage 1 - ");
@@ -293,7 +299,7 @@ void checkForStrike()
           Serial.print(lastReading);
           Serial.print("/");
           Serial.println(thisReading);
-          intensity=thisReading-lastReading; //save the brightness
+          intensity=max(intensity,thisReading-lastReading); //save the brightness if brighter
           }
         else 
           noStrike(); // nope, too long
@@ -448,6 +454,8 @@ String getStatus(int type)
   {
   char temp[11];
   String cret=type==TYPE_HTML?"<br>":type==TYPE_JSON?"":"\n";
+  String h2open=type==TYPE_HTML?"<h2>":"";
+  String h2close=type==TYPE_HTML?"</h2>":"";
   String msg=type==TYPE_JSON?"{\"lightning\":{":"";
   
   msg+=fmt("Uptime",msToAge(millis()),type,false);
@@ -455,16 +463,22 @@ String getStatus(int type)
   msg+=fmt("Illumination",itoa(thisReading,temp,10),type,false);
 
   if (type!=TYPE_JSON)
-    msg+=cret+"Strike Data:"+cret+cret;
+    msg+=cret+h2open+"Strike Data:"+h2close+(type==TYPE_HTML?"":cret+cret);
   msg+=fmt("Past hour",itoa(getRecent(HOUR_MILLISECS),temp,10),type,false);
   msg+=fmt("Past 24 hours",itoa(getRecent(DAY_MILLISECS),temp,10),type,false);
   msg+=fmt("Past 7 days",itoa(getRecent(DAY_MILLISECS*7),temp,10),type,false);
   msg+=fmt("Past 30 days",itoa(getRecent(DAY_MILLISECS*30L),temp,10),type,false);
   msg+=fmt("Total Strikes",itoa(strikeCount,temp,10),type,false);
   
-  String lbr=type==TYPE_JSON?"[":type==TYPE_HTML?"<br>":"\n"; //left bracket
+  String lbr=type==TYPE_JSON?"[":type==TYPE_HTML?"":"\n"; //left bracket
   String rbr=type==TYPE_JSON?"]":""; //you know
-  msg+=fmt(cret+"Strike Log",lbr+getStrikeLog(type)+rbr,type,true);
+  if (type==TYPE_HTML)
+    {
+    msg+=h2open+"Strike Log:"+h2close;
+    msg+=getStrikeLog(type);
+    }
+  else
+    msg+=fmt(cret+h2open+"Strike Log"+h2close,lbr+getStrikeLog(type)+rbr,type,true);
   msg+=type==TYPE_JSON?"}}":"";
   return msg;
   }
