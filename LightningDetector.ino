@@ -59,11 +59,12 @@ static const char configPage[] PROGMEM = "<!DOCTYPE html>"
     "<title>Lightning Detector Configuration</title>"
     "<meta name=\"generator\" content=\"Bluefish 2.2.10\" >"
     "<meta http-equiv=\"content-type\" content=\"text/html; charset=UTF-8\">"
+    "<style>body{background-color: #cccccc; font-family: Arial, Helvetica, Sans-Serif; Color: #000088; }</style>"
     "<script>function showSensitivity() {"
     "document.getElementById(\"sens\").innerHTML=document.getElementById(\"sensitivity\").value;}</script>"
     "</head>"
     "<body>"
-    "<b><div style=\"text-align: center;\"><h1>Lightning Detector Configuration</h1></div></b>"
+    "<b><div style=\"text-align: center;\"><h1><a href=\"/\">Lightning Detector</a> Configuration</h1></div></b>"
     "<br><div id=\"message\">%s</div><br>"
     "<form action=\"/configure\" method=\"post\">"
     "Sensitivity: <sup><span style=\"font-size: smaller;\">(Max)</span></sup> "
@@ -243,8 +244,8 @@ void documentRoot()
       </style>\
     </head>\
     <body>\
-      <h1>Optical Lightning Detector</h1>\
-      <p><h2>Server Data:</h2>"
+      <div style=\"text-align: center;\"><h1>Optical Lightning Detector</h1></div>\
+      <p><h2><a href=\"/configure\">Server Configuration:</a></h2>"
       +getStatus(TYPE_HTML)
       +"</p>\
     </body>\
