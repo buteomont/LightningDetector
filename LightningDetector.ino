@@ -23,7 +23,7 @@
 #include "Arduino.h"
 #include <pgmspace.h>
 #include <ctype.h>
-#include <EEPROM.h>
+#include <ESP_EEPROM.h>
 #include <stdio.h>
 //#include "RTClib.h"
 #include <Esp.h>
@@ -34,24 +34,27 @@
   #define AP_PASS "buteomontHill"
   #endif
 
-const char *ssid = AP_SSID;
+
+
+String ssid = AP_SSID;
 const char *password = AP_PASS;
 const char *htmlCr="<br>";
 const char *textCr="\n\r";
 
+String myMDNS=MY_MDNS;
 int lastReading = 0;
 int thisReading = 0;
 int errval=128; //half way
-int lastErrval=512;
-int resetCounter=0;
+int resetCounter=0; //keeps the LED lit long enough to see it when a strike happens
+int resetDelay=100;  //this is how many milliseconds (approx) the LED stays lit after lightning is seen
 int sensitivity=10;  //successive readings have to be at least this much larger than the last reading to register as a strike
 unsigned long strikes[MAX_STRIKES];       //strike time log
 unsigned int strikeIntensity[MAX_STRIKES];//strike brightness log
 int strikeCount=0;  //number of strikes in the log
 boolean done=false;
 int strikeStage=0;   //to keep track of which part of the strike we are working
-long strikeWaitTime;
-int intensity;        //record the intensity of the strike for the log
+long strikeWaitTime; //to keep from having to use delay()
+int intensity;       //temporary storage to record the intensity of the strike for the log
 
 static const char configPage[] PROGMEM = "<!DOCTYPE html>"
     "<html>"
@@ -84,13 +87,14 @@ ESP8266WebServer server(80);
 void setup()
   {
   //Set up the serial communications
-  Serial.begin(115200);
+  Serial.begin(115200); //This odd speed will show ESP8266 boot diagnostics too
   Serial.setTimeout(10000);
-    
-//  loadSettings(); //load the editable settings from eeprom
+  Serial.println();
   
-  dumpSettings(); //show all of the settings
+  EEPROM.begin(512); //fire up the eeprom section of flash
+  loadSettings(); //load the editable settings from eeprom
   
+ 
   //initialze the outputs
   pinMode(LIGHTNING_LED_PIN, OUTPUT);  //we'll use the led to indicate detection
   digitalWrite(LIGHTNING_LED_PIN,HIGH); //High is off on the dorkboard
@@ -98,12 +102,14 @@ void setup()
   digitalWrite(RELAY_PIN,LOW); //off
 
   //initialize variables
+  
   resetCounter=0;
   thisReading=analogRead(PHOTO_PIN);
   lastReading=thisReading;
   
   //Get the WiFi going
   WiFi.mode(WIFI_STA);
+  Serial.println("Starting WiFi to "+ssid+" with password "+password);
   WiFi.begin(ssid, password);
   Serial.print("Connecting");
 
@@ -120,9 +126,9 @@ void setup()
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
 
-  if (MDNS.begin(MY_MDNS)) {
+  if (MDNS.begin(myMDNS)) {
     Serial.print("MDNS responder started as ");
-    Serial.print(MY_MDNS);
+    Serial.print(myMDNS);
     Serial.println(".local");
   }
 
@@ -145,6 +151,7 @@ void setup()
 //  Serial.println(xPortGetCoreID());
 
   //Ready to loop
+  Serial.println(getStatus(TYPE_TEXT));
   Serial.println("Ready.");
   Serial.println("");
   }
@@ -183,10 +190,25 @@ void setConfig()
     }
   else
     {
-    Serial.println("Setting sensitivity to "+server.arg("sensitivity"));
-    sensitivity=atoi(server.arg("sensitivity").c_str());
-    server.send(200, "text/html", getConfigPage("Configuration Updated")); //send them back to the configuration page
-    Serial.println("POST data: "+server.arg("plain"));
+    String message="Configuration Updated"; //if all goes well
+    char temp[11];
+    int sens=atoi(server.arg("sensitivity").c_str());
+    sensitivity=sens;
+    EEPROM.put(EEPROM_SENSITIVITY,sens);
+    //other ones here...
+
+
+    //perform the actual write to eeprom
+    if (!EEPROM.commit())
+      {
+      Serial.println("Storing to eeprom failed!");
+      message="Could not store EEPROM values!";
+      }
+    else
+      {
+      server.send(200, "text/html", getConfigPage(message)); //send them back to the configuration page
+      Serial.println("POST data: "+server.arg("plain"));
+      }
     }
   Serial.println("Response sent for set config request");
   return;
@@ -245,7 +267,9 @@ void documentRoot()
     </head>\
     <body>\
       <div style=\"text-align: center;\"><h1>Optical Lightning Detector</h1></div>\
-      <p><h2><a href=\"/configure\">Server Configuration:</a></h2>"
+      <p><h2><a href=\"/configure\">Configuration</a> and Status</h2>\
+      mDNS: \""+String(myMDNS)+".local\"<br>\
+      Address: "+WiFi.localIP().toString()+"<br><br>"
       +getStatus(TYPE_HTML)
       +"</p>\
     </body>\
@@ -336,7 +360,7 @@ void strike(unsigned int brightness)
   {
   digitalWrite(LIGHTNING_LED_PIN, LOW);//turn on the blue LED
   digitalWrite(RELAY_PIN, HIGH);    //turn on the relay
-  resetCounter=RESET_DELAY;        //"debounce" the strike
+  resetCounter=resetDelay;        //"debounce" the strike
   int index=strikeCount++ % MAX_STRIKES;
   strikes[index]=millis();  //record the time of this strike
   strikeIntensity[index]=brightness;
@@ -361,32 +385,6 @@ void noStrike()
     }
   }
   
-
-
-void dumpSettings()
-  {
-  Serial.println(" \n");
-  Serial.println(VERSION);
-  Serial.println(" ");
-  Serial.print("ERROR_PIN: ");
-  Serial.println(ERROR_PIN);
-  Serial.print("LIGHTNING_LED_PIN: ");
-  Serial.println(LIGHTNING_LED_PIN);
-  Serial.print("MAX_SLEW_RATE: ");
-  Serial.println(MAX_SLEW_RATE);
-  Serial.print("PHOTO_PIN: ");
-  Serial.println(PHOTO_PIN);
-  Serial.print("RELAY_PIN: ");
-  Serial.println(RELAY_PIN);
-  Serial.print("RESET_DELAY: ");
-  Serial.println(RESET_DELAY);
-  }
-
-  
-/*
-* Read, validate, and return a command from the serial port.
-*/
-
 /*
  * Convert a long that represents age in milliseconds to a readable string
  */
@@ -546,24 +544,18 @@ void reset_totals()
   strikeCount=0;
   }
 
-///*
-//*  Initialize the settings from eeprom
-//*/
-//void loadSettings()
-//  {
-//  // Sensitivity
-//  char* sens=(char*)&sensitivity; //get the location of the 4-byte float
-//  sens[0]=EEPROM.read(EEPROM_SENSITIVITY+0);
-//  sens[1]=EEPROM.read(EEPROM_SENSITIVITY+1);
-//  sens[2]=EEPROM.read(EEPROM_SENSITIVITY+2);
-//  sens[3]=EEPROM.read(EEPROM_SENSITIVITY+3);
-//
-//  // Max Slew Rate
-//  
-//  
-//  // Reset Delay
-//  
-//  }
+/*
+*  Initialize the settings from eeprom
+*/
+void loadSettings()
+  {
+//  EEPROM.get(EEPROM_SSID,ssid);
+//  Serial.println("ssid: -"+ssid+"-");
+//  EEPROM.get(EEPROM_PASSWORD,password);
+  EEPROM.get(EEPROM_SENSITIVITY,sensitivity);
+//  EEPROM.get(EEPROM_RESET_DELAY,resetDelay);
+//  EEPROM.get(EEPROM_MY_MDNS,myMDNS);
+  }
 
 
 
@@ -593,33 +585,9 @@ void reset_totals()
 int readSensor()
   {
   thisReading=analogRead(PHOTO_PIN);
-//  thisReading=(analogRead(PHOTO_PIN)
-//              +analogRead(PHOTO_PIN)
-//              +analogRead(PHOTO_PIN)
-//              +analogRead(PHOTO_PIN))/4;
-//  if (thisReading<2)  //minimum value
-//    thisReading=2;
   return thisReading;
   }
 
-
-//Try to keep the input signal quiesced at approximately the midpoint of the range.
-//This is done by adjusting the pulse width being sent to the compensation circuit.
-//This routine calculates the value of the pulse width.
-void quiesce()
-    {
-    readSensor();
-    errval=thisReading-MAX_READING/2;            // Calculate error value from midpoint of max possible input
-    if (errval>(lastErrval+MAX_SLEW_RATE))       // but limit the change to the maximum allowed
-      errval=lastErrval+MAX_SLEW_RATE;
-    else if (errval<(lastErrval-MAX_SLEW_RATE))
-      errval=lastErrval-MAX_SLEW_RATE;
-    if (errval<0) errval=0;                      // In no case go outside of one byte
-    if (errval>255) errval=255;
-    lastErrval=errval;
-      
-    analogWrite(ERROR_PIN, map(errval,0,255,0,MAX_READING)); //write the new value to the compensation circuit
-    }
     
 // given a PROGMEM string, use Serial.print() to send it out
 void printProgStr(const char str[])
