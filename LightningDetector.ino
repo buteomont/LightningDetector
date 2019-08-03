@@ -30,10 +30,14 @@
 #include "LightningDetector.h"
 
 #ifndef AP_SSID
-  #define AP_SSID "Kif's Dream"
-  #define AP_PASS "buteomontHill"
+  #define AP_SSID "lightning!"
+  #define AP_PASS ""
   #define MY_MDNS "lightning" 
   #endif
+
+IPAddress local_IP(192,168,1,1);
+IPAddress gateway(192,168,1,254);
+IPAddress subnet(255,255,255,0);
 
 char ssid[SSID_SIZE] = AP_SSID;
 char password[PASSWORD_SIZE] = AP_PASS;
@@ -55,13 +59,12 @@ boolean done=false;
 int strikeStage=0;   //to keep track of which part of the strike we are working
 long strikeWaitTime; //to keep from having to use delay()
 int intensity;       //temporary storage to record the intensity of the strike for the log
+boolean configured=false;  //don't look for lightning until we are set up
 
-static const char configPage[] PROGMEM = "<!DOCTYPE html>"
-    "<html>"
+static const char configPage[] PROGMEM = "<html>"
     "<head>"
     "<title>Lightning Detector Configuration</title>"
-    "<meta http-equiv=\"content-type\" content=\"text/html; charset=UTF-8\">"
-    "<style>body{background-color: #cccccc; font-family: Arial, Helvetica, Sans-Serif; Color: #000088; }</style>"
+    "<style>body{background-color: #cccccc; Color: #000088; }</style>"
     "<script>function showSensitivity() {document.getElementById(\"sens\").innerHTML=document.getElementById(\"sensitivity\").value;}</script>"
     "</head>"
     "<body>"
@@ -76,11 +79,17 @@ static const char configPage[] PROGMEM = "<!DOCTYPE html>"
     " onchange=\"showSensitivity()\">"
     " <sup><span style=\"font-size: smaller;\">(Min)</span></sup>"
     " <div align=\"left\" style=\"display: inline; \" id=\"sens\"></div>"
-    "<br>"
-    "<script> showSensitivity();</script><br><br>"
+    "<br><br>"
+    "<script> showSensitivity();</script>"
+    "<input type=\"checkbox\" name=\"factory_reset\" value=\"reset\" "
+    "onchange=\"if (this.checked) alert('Checking this box will cause the configuration to be set to "
+    "factory defaults and reset the detector! \\nOnce reset, you must connect your wifi to access point "
+    "\\'lightning!\\' and browse to http://lightning.local to reconfigure it.');\">"
+    "Factory Reset"
+    "<br><br>"
     "<input type=\"submit\" name=\"Update Configuration\" value=\"Update\">"
     "</form>"
-    "<script type=\"text/javascript\">"
+    "<script>"
     "var msg=new URLSearchParams(document.location.search.substring(1)).get(\"msg\");"
     "if (msg)"
     " document.getElementById(\"message\").innerHTML=msg;"
@@ -88,6 +97,8 @@ static const char configPage[] PROGMEM = "<!DOCTYPE html>"
     "</body>"
     "</html>"
     ;
+//configBuf is defined here to keep it off the stack.
+char configBuf[3072]; //I don't know why it has to be twice the size
 
 ESP8266WebServer server(80);
 
@@ -102,7 +113,6 @@ void setup()
 
   EEPROM.begin(512); //fire up the eeprom section of flash
   loadSettings(); //load the editable settings from eeprom
-  
  
   //initialze the outputs
   pinMode(LIGHTNING_LED_PIN, OUTPUT);  //we'll use the led to indicate detection
@@ -117,23 +127,37 @@ void setup()
   lastReading=thisReading;
   
   //Get the WiFi going
-  WiFi.mode(WIFI_STA);
-  Serial.println("Starting WiFi to "+String(ssid)+" with password "+String(password));
-  WiFi.begin(ssid, password);
-  Serial.print("Connecting");
-
-  // Wait for connection
-  while (WiFi.status() != WL_CONNECTED) 
+  if (strcmp(AP_SSID,ssid)==0)
     {
-    delay(500);
-    Serial.print(".");
+    Serial.print("Configuring soft access point...");
+    WiFi.softAPConfig(local_IP, gateway, subnet);
+    WiFi.softAP(ssid, password);
+  
+    IPAddress myIP = WiFi.softAPIP();
+    Serial.print("AP IP address: ");
+    Serial.println(myIP);
     }
-
-  Serial.println("");
-  Serial.print("Connected to ");
-  Serial.println(ssid);
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
+  else
+    {
+    configured=true;  //we are configured
+    WiFi.mode(WIFI_STA);
+    Serial.println("Starting WiFi to "+String(ssid)+" with password "+String(password));
+    WiFi.begin(ssid, password);
+    Serial.print("Connecting");
+  
+    // Wait for connection
+    while (WiFi.status() != WL_CONNECTED) 
+      {
+      delay(500);
+      Serial.print(".");
+      }
+  
+    Serial.println("");
+    Serial.print("Connected to ");
+    Serial.println(ssid);
+    Serial.print("IP address: ");
+    Serial.println(WiFi.localIP());       
+    }
 
   if (MDNS.begin(myMDNS)) {
     Serial.print("MDNS responder started as ");
@@ -171,7 +195,7 @@ void loop()
   MDNS.update();
 
   //Don't read the sensor too fast or else it will disconnect the wifi
-  if(millis()%5 != 0)
+  if(!configured || millis()%5 != 0)
     return;
   else
     {     
@@ -181,15 +205,14 @@ void loop()
 
 char* getConfigPage(String message)
   {
-  char buf[strlen_P((PGM_P)FPSTR(configPage))*2]; //don't know why it has to be twice the size
   char temp[11];
-  sprintf(buf,(PGM_P)FPSTR(configPage),
+  sprintf_P(configBuf,(PGM_P)FPSTR(configPage),
               message.c_str(),
               ssid,
               password,
               myMDNS,
               itoa(sensitivity,temp,10));
-  return buf;
+  return configBuf;
   }
 
 void setConfig()
@@ -200,39 +223,62 @@ void setConfig()
     server.send(200, "text/html", getConfigPage(""));
     Serial.println("Configure page sent.");
     }
+  else if (server.arg("factory_reset").compareTo("reset")==0) //factory reset
+    {
+    boolean valid=false;
+    EEPROM.put(EEPROM_ADDR_FLAG,valid);
+    EEPROM.commit();
+    ESP.reset();   
+    }
   else
     {
     String message="Configuration Updated"; //if all goes well
-    char temp[11];
+    Serial.println("POST data: "+server.arg("plain"));
+
     int sens=atoi(server.arg("sensitivity").c_str());
-    sensitivity=sens;
-    strcpy(myMDNS,server.arg("mdns").c_str());
-    strcpy(ssid,server.arg("ssid").c_str());
-    strcpy(password,server.arg("pword").c_str());
 
-    boolean valid=true;
-    EEPROM.put(EEPROM_ADDR_FLAG,valid);
-    EEPROM.put(EEPROM_ADDR_SSID,ssid);
-    EEPROM.put(EEPROM_ADDR_PASSWORD,password);
-    EEPROM.put(EEPROM_ADDR_MDNS,myMDNS);
-    EEPROM.put(EEPROM_ADDR_SENSITIVITY,sensitivity);
-
-    //perform the actual write to eeprom
-    if (!EEPROM.commit())
+    if (strcmp(myMDNS,server.arg("mdns").c_str())==0
+      &&strcmp(ssid,server.arg("ssid").c_str())==0
+      &&strcmp(password,server.arg("pword").c_str())==0
+      &&sensitivity==sens)
       {
-      Serial.println("Storing to eeprom failed!");
-      message="Could not store configuration values!";
+      server.sendHeader("Location", String("/"), true);
+      server.send(303, "text/plain", ""); //send them back to the configuration page
       }
-    else
+    else 
       {
-      Serial.println("Configuration stored to EEPROM");
-      documentRoot();
-//      server.send(200, "text/html", getConfigPage(message)); //send them back to the configuration page
-      Serial.println("POST data: "+server.arg("plain"));
+      sensitivity=sens;
+      strcpy(myMDNS,server.arg("mdns").c_str());
+      strcpy(ssid,server.arg("ssid").c_str());
+      strcpy(password,server.arg("pword").c_str());
+  
+      boolean valid=true;
+      EEPROM.put(EEPROM_ADDR_FLAG,valid);
+      EEPROM.put(EEPROM_ADDR_SSID,ssid);
+      EEPROM.put(EEPROM_ADDR_PASSWORD,password);
+      EEPROM.put(EEPROM_ADDR_MDNS,myMDNS);
+      EEPROM.put(EEPROM_ADDR_SENSITIVITY,sensitivity);
+  
+      //perform the actual write to eeprom
+      if (!EEPROM.commit())
+        {
+        Serial.println("Storing to eeprom failed!");
+        message="Could not store configuration values!";
+        server.send(200, "text/html", getConfigPage(message)); //send them back to the configuration page
+        }
+      else
+        {
+        Serial.println("Configuration stored to EEPROM");
+        if (configured)
+          {
+          server.sendHeader("Location", String("/"), true);
+          server.send(303, "text/plain", ""); //send them back to the configuration page
+          }
+        else
+          ESP.reset();
+        }
       }
     }
-  Serial.println("Response sent for set config request");
-  return;
   }
 
 void pageNotFound() 
@@ -278,6 +324,12 @@ void sendJson()
 void documentRoot() 
   {
   Serial.println("Received request for document root");
+  if (!configured)
+    {
+    Serial.println("Detector not configured. Redirecting to configuration page.");
+    setConfig();
+    return;
+    }
   String page="<html>\
     <head>\
       <meta http-equiv='refresh' content='15'/>\
