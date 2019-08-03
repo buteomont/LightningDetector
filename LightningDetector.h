@@ -18,13 +18,16 @@
 #define TYPE_TABLE      2
 #define TYPE_JSON       3
 
-//EEPROM starting addresses.  All must be 4 bytes.
-#define EEPROM_SSID         0
-#define EEPROM_PASSWORD     32
-#define EEPROM_MY_MDNS      96
-#define EEPROM_SENSITIVITY  352
-#define EEPROM_RESET_DELAY  356
+#define SSID_SIZE 32
+#define PASSWORD_SIZE 64
+#define MDNS_SIZE 256
 
-#define MY_MDNS   "lightning" //this will be our server name
+#define EEPROM_ADDR_FLAG 0
+#define EEPROM_ADDR_SSID 4
+#define EEPROM_ADDR_PASSWORD EEPROM_ADDR_SSID+SSID_SIZE
+#define EEPROM_ADDR_MDNS EEPROM_ADDR_PASSWORD+PASSWORD_SIZE
+#define EEPROM_ADDR_SENSITIVITY EEPROM_ADDR_MDNS+MDNS_SIZE
+
+
 
 #define DEBUG false  //to show plotter graph

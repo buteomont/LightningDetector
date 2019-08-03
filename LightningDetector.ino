@@ -32,16 +32,16 @@
 #ifndef AP_SSID
   #define AP_SSID "Kif's Dream"
   #define AP_PASS "buteomontHill"
+  #define MY_MDNS "lightning" 
   #endif
 
+char ssid[SSID_SIZE] = AP_SSID;
+char password[PASSWORD_SIZE] = AP_PASS;
+char myMDNS[MDNS_SIZE]=MY_MDNS;
 
-
-String ssid = AP_SSID;
-const char *password = AP_PASS;
 const char *htmlCr="<br>";
 const char *textCr="\n\r";
 
-String myMDNS=MY_MDNS;
 int lastReading = 0;
 int thisReading = 0;
 int errval=128; //half way
@@ -60,16 +60,17 @@ static const char configPage[] PROGMEM = "<!DOCTYPE html>"
     "<html>"
     "<head>"
     "<title>Lightning Detector Configuration</title>"
-    "<meta name=\"generator\" content=\"Bluefish 2.2.10\" >"
     "<meta http-equiv=\"content-type\" content=\"text/html; charset=UTF-8\">"
     "<style>body{background-color: #cccccc; font-family: Arial, Helvetica, Sans-Serif; Color: #000088; }</style>"
-    "<script>function showSensitivity() {"
-    "document.getElementById(\"sens\").innerHTML=document.getElementById(\"sensitivity\").value;}</script>"
+    "<script>function showSensitivity() {document.getElementById(\"sens\").innerHTML=document.getElementById(\"sensitivity\").value;}</script>"
     "</head>"
     "<body>"
     "<b><div style=\"text-align: center;\"><h1><a href=\"/\">Lightning Detector</a> Configuration</h1></div></b>"
     "<br><div id=\"message\">%s</div><br>"
     "<form action=\"/configure\" method=\"post\">"
+    "SSID: <input type=\"text\" name=\"ssid\" value=\"%s\" maxlength=\"32\"><br>"
+    "Password: <input type=\"text\" name=\"pword\" value=\"%s\" maxlength=\"255\"><br>"
+    "mDNS: <input type=\"text\" name=\"mdns\" value=\"%s\" maxlength=\"64\">.local<br>"
     "Sensitivity: <sup><span style=\"font-size: smaller;\">(Max)</span></sup> "
     " <input type=\"range\" name=\"sensitivity\" id=\"sensitivity\" value=\"%s\" min=\"1\" max=\"25\" step=\"1\""
     " onchange=\"showSensitivity()\">"
@@ -79,18 +80,26 @@ static const char configPage[] PROGMEM = "<!DOCTYPE html>"
     "<script> showSensitivity();</script><br><br>"
     "<input type=\"submit\" name=\"Update Configuration\" value=\"Update\">"
     "</form>"
+    "<script type=\"text/javascript\">"
+    "var msg=new URLSearchParams(document.location.search.substring(1)).get(\"msg\");"
+    "if (msg)"
+    " document.getElementById(\"message\").innerHTML=msg;"
+    "</script>"
     "</body>"
-    "</html>";
+    "</html>"
+    ;
 
 ESP8266WebServer server(80);
 
 void setup()
   {
   //Set up the serial communications
-  Serial.begin(115200); //This odd speed will show ESP8266 boot diagnostics too
+  Serial.begin(115200); 
   Serial.setTimeout(10000);
   Serial.println();
-  
+  delay(500);
+  Serial.println("Starting up...");
+
   EEPROM.begin(512); //fire up the eeprom section of flash
   loadSettings(); //load the editable settings from eeprom
   
@@ -109,7 +118,7 @@ void setup()
   
   //Get the WiFi going
   WiFi.mode(WIFI_STA);
-  Serial.println("Starting WiFi to "+ssid+" with password "+password);
+  Serial.println("Starting WiFi to "+String(ssid)+" with password "+String(password));
   WiFi.begin(ssid, password);
   Serial.print("Connecting");
 
@@ -176,6 +185,9 @@ char* getConfigPage(String message)
   char temp[11];
   sprintf(buf,(PGM_P)FPSTR(configPage),
               message.c_str(),
+              ssid,
+              password,
+              myMDNS,
               itoa(sensitivity,temp,10));
   return buf;
   }
@@ -194,19 +206,28 @@ void setConfig()
     char temp[11];
     int sens=atoi(server.arg("sensitivity").c_str());
     sensitivity=sens;
-    EEPROM.put(EEPROM_SENSITIVITY,sens);
-    //other ones here...
+    strcpy(myMDNS,server.arg("mdns").c_str());
+    strcpy(ssid,server.arg("ssid").c_str());
+    strcpy(password,server.arg("pword").c_str());
 
+    boolean valid=true;
+    EEPROM.put(EEPROM_ADDR_FLAG,valid);
+    EEPROM.put(EEPROM_ADDR_SSID,ssid);
+    EEPROM.put(EEPROM_ADDR_PASSWORD,password);
+    EEPROM.put(EEPROM_ADDR_MDNS,myMDNS);
+    EEPROM.put(EEPROM_ADDR_SENSITIVITY,sensitivity);
 
     //perform the actual write to eeprom
     if (!EEPROM.commit())
       {
       Serial.println("Storing to eeprom failed!");
-      message="Could not store EEPROM values!";
+      message="Could not store configuration values!";
       }
     else
       {
-      server.send(200, "text/html", getConfigPage(message)); //send them back to the configuration page
+      Serial.println("Configuration stored to EEPROM");
+      documentRoot();
+//      server.send(200, "text/html", getConfigPage(message)); //send them back to the configuration page
       Serial.println("POST data: "+server.arg("plain"));
       }
     }
@@ -549,12 +570,19 @@ void reset_totals()
 */
 void loadSettings()
   {
-//  EEPROM.get(EEPROM_SSID,ssid);
-//  Serial.println("ssid: -"+ssid+"-");
-//  EEPROM.get(EEPROM_PASSWORD,password);
-  EEPROM.get(EEPROM_SENSITIVITY,sensitivity);
-//  EEPROM.get(EEPROM_RESET_DELAY,resetDelay);
-//  EEPROM.get(EEPROM_MY_MDNS,myMDNS);
+  boolean valid=false;
+  EEPROM.get(EEPROM_ADDR_FLAG,valid);
+  if (valid)    //skip loading stuff if it's never been written
+    {
+    EEPROM.get(EEPROM_ADDR_SSID,ssid);
+    EEPROM.get(EEPROM_ADDR_PASSWORD,password);
+    EEPROM.get(EEPROM_ADDR_MDNS,myMDNS);
+    EEPROM.get(EEPROM_ADDR_SENSITIVITY,sensitivity);
+  
+    Serial.println("myMDNS is "+String(myMDNS));
+    }
+  else
+    Serial.println("Skipping load from EEPROM");
   }
 
 
