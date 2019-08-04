@@ -321,6 +321,7 @@ void pageNotFound()
     }
 
   server.send(404, "text/plain", message);
+  Serial.println(message);
   Serial.println("Code 404 response sent.");
   }
 
