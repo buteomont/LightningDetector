@@ -51,7 +51,7 @@ int thisReading = 0;
 int errval=128; //half way
 int resetCounter=0; //keeps the LED lit long enough to see it when a strike happens
 int resetDelay=100;  //this is how many milliseconds (approx) the LED stays lit after lightning is seen
-int sensitivity=10;  //successive readings have to be at least this much larger than the last reading to register as a strike
+int sensitivity=12;  //successive readings have to be at least this much larger than the last reading to register as a strike
 unsigned long strikes[MAX_STRIKES];       //strike time log
 unsigned int strikeIntensity[MAX_STRIKES];//strike brightness log
 int strikeCount=0;  //number of strikes in the log
@@ -110,15 +110,31 @@ void setup()
   Serial.println();
   delay(500);
   Serial.println("Starting up...");
-
-  EEPROM.begin(512); //fire up the eeprom section of flash
-  loadSettings(); //load the editable settings from eeprom
  
   //initialze the outputs
   pinMode(LIGHTNING_LED_PIN, OUTPUT);  //we'll use the led to indicate detection
   digitalWrite(LIGHTNING_LED_PIN,HIGH); //High is off on the dorkboard
   pinMode(RELAY_PIN, OUTPUT);  //set up the relay
   digitalWrite(RELAY_PIN,LOW); //off
+
+  EEPROM.begin(512); //fire up the eeprom section of flash
+
+  //look for a double-click on the reset button.  If reset is clicked, then clicked
+  //again while the LED is on, then do a factory reset. We detect this by reading the
+  //"configured" value from EEPROM and setting it to false, turning on the LED, then 
+  //turning the LED off and writing the value back to EEPROM two seconds later.
+  boolean conf;
+  boolean noConf=false;
+  EEPROM.get(EEPROM_ADDR_FLAG,conf);  //save original value
+  EEPROM.put(EEPROM_ADDR_FLAG,noConf);//write "false" for non-configured
+  EEPROM.commit();                    //do the write
+  digitalWrite(LIGHTNING_LED_PIN,LOW);//Turn on the LED
+  delay(2000);                        //wait a sec
+  digitalWrite(LIGHTNING_LED_PIN,HIGH);//Turn the LED back off
+  EEPROM.put(EEPROM_ADDR_FLAG,conf);  //If we are here then no double-click, write the original back
+  EEPROM.commit();                    //do the write
+
+  loadSettings(); //load the editable settings from eeprom
 
   //initialize variables
   
@@ -127,29 +143,35 @@ void setup()
   lastReading=thisReading;
   
   //Get the WiFi going
-  if (strcmp(AP_SSID,ssid)==0)
+  if (strcmp(AP_SSID,ssid)==0) //using the default SSID?  If so then open the configure page
     {
-    Serial.print("Configuring soft access point...");
+    Serial.print("Configuring soft access point. SSID is \""+String(ssid)+"\". ");
     WiFi.softAPConfig(local_IP, gateway, subnet);
     WiFi.softAP(ssid, password);
   
     IPAddress myIP = WiFi.softAPIP();
-    Serial.print("AP IP address: ");
+    Serial.print("IP address is ");
     Serial.println(myIP);
     }
   else
     {
     configured=true;  //we are configured
     WiFi.mode(WIFI_STA);
-    Serial.println("Starting WiFi to "+String(ssid)+" with password "+String(password));
+    Serial.println("Connecting to "+String(ssid)+" with password "+String(password));
     WiFi.begin(ssid, password);
     Serial.print("Connecting");
   
     // Wait for connection
+    int waitCount=100;
     while (WiFi.status() != WL_CONNECTED) 
       {
       delay(500);
       Serial.print(".");
+      if (--waitCount<=0)
+        {
+        Serial.println("\n\nTimeout waiting to connect, resetting.");
+        ESP.restart();
+        }
       }
   
     Serial.println("");
@@ -363,12 +385,6 @@ void checkForStrike()
   switch(strikeStage)
     {
     case 0:
-//        Serial.print("0/");
-//        Serial.print(lastReading);
-//        Serial.print("/");
-//        Serial.print(millis());
-//        Serial.print("/");
-//        Serial.println(strikeWaitTime);
       readSensor(); //take a reading
       if (thisReading > lastReading+sensitivity) //Is this reading brighter than the last one?
         {
@@ -412,9 +428,7 @@ void checkForStrike()
             {
             strikeStage++;   //Take us to default case until this strike is over
             Serial.print("Strike confirmed! - ");
-            Serial.print(lastReading);
-            Serial.print("/");
-            Serial.println(thisReading);
+            Serial.println(intensity);
             strike(intensity);  //yep, record it    
             }
           else 
@@ -634,7 +648,7 @@ void loadSettings()
     Serial.println("myMDNS is "+String(myMDNS));
     }
   else
-    Serial.println("Skipping load from EEPROM");
+    Serial.println("Skipping load from EEPROM, device not configured.");
   }
 
 
