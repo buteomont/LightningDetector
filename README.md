@@ -10,6 +10,11 @@ The hardware is dead simple, as most of the heavy lifting is done by the ESP boa
 
 ### Firmware
 The program to drive the lightning detector allows you to view or download the strike log and adjust the operating parameters. It operates as a basic web server, while concurrently watching for any lightning in the area.  When a lightning strike is detected, it will record the relative time and the intensity in the strike log.   
-To reduce false detections, the program will ensure that the length of the strike is within a user-definable size, no shorter and no longer.
+
+When powered up for the first time, the 8266 will go into "AP mode", since it doesn't know about any wifi routers in the area.  In AP mode, the ESP8266 *is* the router, with an SSID of **_lightning!_**.  You will need to connect to that "router" and browse to _http://lightning.local_ to configure it.  Enter your household wifi SSID and password and press the _Update_ button.  You can also change the mDNS domain name and sensitivity setting.   
+
+If you enter the SSID or password incorrectly, the lightning detector will never connect to your LAN, and also will not enter AP mode so you can change it!  The way around this is to press the _reset_ button on the ESP8266 and watch for the LED to illuminate.  When it does, press the _reset_ button again.  This will wipe the configuration and cause it to enter AP mode again.  
+
+To reduce false detections, the program will ensure that the length of the strike is within a specific duration window, no shorter and no longer. That window is from 5 to 200 milliseconds and may need to change if false positives are recorded.
 
 --more to come--
