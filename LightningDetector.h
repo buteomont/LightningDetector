@@ -1,7 +1,8 @@
 //#include "iomap_mhetesp32minikit.h"
 
 #define VERSION          "Version 4.0" // compiled on "__DATE__" at " __TIME__
-#define LIGHTNING_LED_PIN LED_BUILTIN //D4
+#define LIGHTNING_LED_PIN LED_BUILTIN 
+#define BLUE_LED_PIN    D4
 #define RELAY_PIN       12      //relay on digital 12
 #define PHOTO_PIN       A0      //input from solar cell
 #define ERROR_PIN       D1      //analog output for ambient light compensation
@@ -13,6 +14,8 @@
 #define MAX_STRIKE_WIDTH 200    //But no longer than this
 #define HTML_CR         "<br>"
 #define TEXT_CR         "\n\r"
+#define OFF             HIGH
+#define ON              LOW
 #define TYPE_TEXT       0
 #define TYPE_HTML       1
 #define TYPE_TABLE      2

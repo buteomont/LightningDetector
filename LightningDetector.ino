@@ -28,6 +28,7 @@
 //#include "RTClib.h"
 #include <Esp.h>
 #include "LightningDetector.h"
+#include "configpage.h"
 
 #ifndef AP_SSID
   #define AP_SSID "lightning!"
@@ -51,7 +52,7 @@ int thisReading = 0;
 int errval=128; //half way
 int resetCounter=0; //keeps the LED lit long enough to see it when a strike happens
 int resetDelay=100;  //this is how many milliseconds (approx) the LED stays lit after lightning is seen
-int sensitivity=12;  //successive readings have to be at least this much larger than the last reading to register as a strike
+int sensitivity=10;  //successive readings have to be at least this much larger than the last reading to register as a strike
 unsigned long strikes[MAX_STRIKES];       //strike time log
 unsigned int strikeIntensity[MAX_STRIKES];//strike brightness log
 int strikeCount=0;  //number of strikes in the log
@@ -60,45 +61,6 @@ int strikeStage=0;   //to keep track of which part of the strike we are working
 long strikeWaitTime; //to keep from having to use delay()
 int intensity;       //temporary storage to record the intensity of the strike for the log
 boolean configured=false;  //don't look for lightning until we are set up
-
-static const char configPage[] PROGMEM = "<html>"
-    "<head>"
-    "<title>Lightning Detector Configuration</title>"
-    "<style>body{background-color: #cccccc; Color: #000088; }</style>"
-    "<script>function showSensitivity() {document.getElementById(\"sens\").innerHTML=document.getElementById(\"sensitivity\").value;}</script>"
-    "</head>"
-    "<body>"
-    "<b><div style=\"text-align: center;\"><h1><a href=\"/\">Lightning Detector</a> Configuration</h1></div></b>"
-    "<br><div id=\"message\">%s</div><br>"
-    "<form action=\"/configure\" method=\"post\">"
-    "SSID: <input type=\"text\" name=\"ssid\" value=\"%s\" maxlength=\"32\"><br>"
-    "Password: <input type=\"text\" name=\"pword\" value=\"%s\" maxlength=\"255\"><br>"
-    "mDNS: <input type=\"text\" name=\"mdns\" value=\"%s\" maxlength=\"64\">.local<br>"
-    "Sensitivity: <sup><span style=\"font-size: smaller;\">(Max)</span></sup> "
-    " <input type=\"range\" name=\"sensitivity\" id=\"sensitivity\" value=\"%s\" min=\"1\" max=\"25\" step=\"1\""
-    " onchange=\"showSensitivity()\">"
-    " <sup><span style=\"font-size: smaller;\">(Min)</span></sup>"
-    " <div align=\"left\" style=\"display: inline; \" id=\"sens\"></div>"
-    "<br><br>"
-    "<script> showSensitivity();</script>"
-    "<input type=\"checkbox\" name=\"factory_reset\" value=\"reset\" "
-    "onchange=\"if (this.checked) alert('Checking this box will cause the configuration to be set to "
-    "factory defaults and reset the detector! \\nOnce reset, you must connect your wifi to access point "
-    "\\'lightning!\\' and browse to http://lightning.local to reconfigure it.');\">"
-    "Factory Reset"
-    "<br><br>"
-    "<input type=\"submit\" name=\"Update Configuration\" value=\"Update\">"
-    "</form>"
-    "<script>"
-    "var msg=new URLSearchParams(document.location.search.substring(1)).get(\"msg\");"
-    "if (msg)"
-    " document.getElementById(\"message\").innerHTML=msg;"
-    "</script>"
-    "</body>"
-    "</html>"
-    ;
-//configBuf is defined here to keep it off the stack.
-char configBuf[3072]; //I don't know why it has to be twice the size
 
 ESP8266WebServer server(80);
 
@@ -114,6 +76,8 @@ void setup()
   //initialze the outputs
   pinMode(LIGHTNING_LED_PIN, OUTPUT);  //we'll use the led to indicate detection
   digitalWrite(LIGHTNING_LED_PIN,HIGH); //High is off on the dorkboard
+  pinMode(BLUE_LED_PIN, OUTPUT);  //we'll use this led to indicate when we're looking for server connections
+  digitalWrite(BLUE_LED_PIN,HIGH); //
   pinMode(RELAY_PIN, OUTPUT);  //set up the relay
   digitalWrite(RELAY_PIN,LOW); //off
 
@@ -191,6 +155,7 @@ void setup()
   server.on("/json", sendJson);
   server.on("/text", sendText);
   server.on("/configure", setConfig);
+  server.on("/reset",factoryReset);
   server.on("/bad", []() 
     {
     Serial.println("Received request for bad data");
@@ -214,13 +179,13 @@ void setup()
 void loop()
   {
   server.handleClient();
-  MDNS.update();
-
+  //MDNS.update();
+  
   //Don't read the sensor too fast or else it will disconnect the wifi
-  if(!configured || millis()%5 != 0)
+  if(!configured || millis()%10 != 0)
     return;
   else
-    {     
+    {
     checkForStrike();
     }
   }
@@ -237,6 +202,18 @@ char* getConfigPage(String message)
   return configBuf;
   }
 
+void factoryReset()
+  {
+  Serial.println("Received factory reset request");
+  boolean valid=false;
+  EEPROM.put(EEPROM_ADDR_FLAG,valid);
+  EEPROM.commit();
+  server.sendHeader("Location", String("http://lightning.local/"), true);
+  server.send(303, "text/plain", ""); //gonna need to configure it again
+  delay(500);
+  ESP.restart();   
+  }
+
 void setConfig()
   {
   Serial.println("Received set config request");
@@ -244,13 +221,6 @@ void setConfig()
     {
     server.send(200, "text/html", getConfigPage(""));
     Serial.println("Configure page sent.");
-    }
-  else if (server.arg("factory_reset").compareTo("reset")==0) //factory reset
-    {
-    boolean valid=false;
-    EEPROM.put(EEPROM_ADDR_FLAG,valid);
-    EEPROM.commit();
-    ESP.reset();   
     }
   else
     {
@@ -291,13 +261,10 @@ void setConfig()
       else
         {
         Serial.println("Configuration stored to EEPROM");
-        if (configured)
-          {
-          server.sendHeader("Location", String("/"), true);
-          server.send(303, "text/plain", ""); //send them back to the configuration page
-          }
-        else
-          ESP.reset();
+        server.sendHeader("Location", String("http://"+server.arg("mdns")+".local/"), true);
+        server.send(303, "text/plain", ""); //send them to the factory reset page
+        delay(1000);
+        ESP.restart();
         }
       }
     }
