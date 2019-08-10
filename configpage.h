@@ -36,5 +36,5 @@ static const char configPage[] PROGMEM = "<html>"
     "</html>"
     ;
     
-//configBuf is defined here to keep it off the stack.
+//configBuf is defined globally to keep it off the stack.
 char configBuf[3072]; //I don't know why it has to be twice the size

@@ -15,6 +15,6 @@ When powered up for the first time, the 8266 will go into "AP mode", since it do
 
 If you enter the SSID or password incorrectly, the lightning detector will never connect to your LAN, and also will not enter AP mode so you can change it!  The way around this is to press the _reset_ button on the ESP8266 and watch for the LED to illuminate.  When it does, press the _reset_ button again.  This will wipe the configuration and cause it to enter AP mode again.  
 
-To reduce false detections, the program will ensure that the length of the strike is within a specific duration window, no shorter and no longer. That window is from 5 to 200 milliseconds and may need to change if false positives are recorded.
+To reduce false detections, the program will ensure that the length of the strike is within a specific duration window, no shorter and no longer. That window is from 5 to 200 milliseconds and may need to change if false positives are recorded or strikes are missed.
 
 --more to come--

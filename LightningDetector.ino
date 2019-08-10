@@ -6,13 +6,10 @@
  *      Author: David E. Powell
  *
  *  --------Hardware and Software Enhancements----------
- *  - Add reset command to clear all counters and restart
- *  - Add counters to eeprom for strike count in the last 24 hours, week, month, and YTD 
- *  - Add data on demand instead of streaming
- *  - Add configuration to eeprom for sensitivity, reset delay, slew rate
- *  - Write dedicated GUI for PC end of serial connection
- *  - 
- *
+ *  - Move strike log to EEPROM
+ *  - Add button/REST command to clear strike log
+ *  - Read NIST time on boot and use clock time in log instead of elapsed time
+ *  - Configure static or DHCP address
  *
  */
 //#include "WProgram.h" instead of Arduino.h when outside of Arduino IDE
@@ -25,8 +22,8 @@
 #include <ctype.h>
 #include <ESP_EEPROM.h>
 #include <stdio.h>
-//#include "RTClib.h"
 #include <Esp.h>
+#include <TimeLib.h>
 #include "LightningDetector.h"
 #include "configpage.h"
 
@@ -61,8 +58,16 @@ int strikeStage=0;   //to keep track of which part of the strike we are working
 long strikeWaitTime; //to keep from having to use delay()
 int intensity;       //temporary storage to record the intensity of the strike for the log
 boolean configured=false;  //don't look for lightning until we are set up
+time_t tod=0;         //time of day
+time_t baseMillis=0;  //The millis() reading at the time we got the time from NIST
+
+IPAddress timeServer(132,163,96,2);  //time.nist.gov
 
 ESP8266WebServer server(80);
+WiFiUDP Udp;
+
+unsigned int localPort = 8888;  // local port to listen for UDP packets
+const int timeZone = -4;  // Eastern Daylight Time (USA)
 
 void setup()
   {
@@ -121,6 +126,7 @@ void setup()
     {
     configured=true;  //we are configured
     WiFi.mode(WIFI_STA);
+    WiFi.disconnect();
     Serial.println("Connecting to "+String(ssid)+" with password "+String(password));
     WiFi.begin(ssid, password);
     Serial.print("Connecting");
@@ -152,6 +158,7 @@ void setup()
   }
 
   server.on("/", documentRoot);
+  server.on("/index.html", documentRoot);
   server.on("/json", sendJson);
   server.on("/text", sendText);
   server.on("/configure", setConfig);
@@ -167,6 +174,18 @@ void setup()
   Serial.println("HTTP server started");
   strikeWaitTime=millis(); //initialize the delay counter
 
+  Udp.begin(localPort);
+  tod=getNtpTime(); //initialize the TOD clock
+  baseMillis=millis();
+//  Serial.print("The time is ");
+//  if (tod>0)
+//    {
+//    char timebuf[25];
+//    Serial.println(displayTime(tod,timebuf));
+//    }
+//  else
+//    Serial.println("unknown.");
+
 //  Serial.print("setup() running on core ");
 //  Serial.println(xPortGetCoreID());
 
@@ -179,7 +198,7 @@ void setup()
 void loop()
   {
   server.handleClient();
-  //MDNS.update();
+  MDNS.update();
   
   //Don't read the sensor too fast or else it will disconnect the wifi
   if(!configured || millis()%10 != 0)
@@ -189,6 +208,81 @@ void loop()
     checkForStrike();
     }
   }
+
+//format the time to be human-readable
+char* displayTime(time_t mytime, char* buf)
+  {
+  // digital clock display of the time
+  sprintf(buf,"%d/%d/%d %d:%02d:%02d",month(mytime),
+                                    day(mytime),
+                                    year(mytime),
+                                    hour(mytime),
+                                    minute(mytime),
+                                    second(mytime)); 
+  return buf;
+  }
+
+
+
+/*-------- NTP code ----------*/
+
+byte packetBuffer[NTP_PACKET_SIZE]; // NTP time is in the first 48 bytes of message
+
+time_t getNtpTime()
+  {
+  while (Udp.parsePacket() > 0) ; // discard any previously received packets
+  Serial.println("Transmit NTP Request");
+  sendNTPpacket(timeServer);
+  uint32_t beginWait = millis();
+  while (millis() - beginWait < 5000) 
+    {
+    int size = Udp.parsePacket();
+    if (size >= NTP_PACKET_SIZE) 
+      {
+      Serial.println("Received NTP Response");
+      Udp.read(packetBuffer, NTP_PACKET_SIZE);  // read packet into the buffer
+      
+      unsigned long secsSince1900;
+      // convert four bytes starting at location 40 to a long integer
+      secsSince1900 =  (unsigned long)packetBuffer[40] << 24;
+      secsSince1900 |= (unsigned long)packetBuffer[41] << 16;
+      secsSince1900 |= (unsigned long)packetBuffer[42] << 8;
+      secsSince1900 |= (unsigned long)packetBuffer[43];
+      return secsSince1900 - 2208988800UL + timeZone * SECS_PER_HOUR;
+      }
+    if ((millis()-beginWait) % 1000==0) //re-request the time every second until we get it
+      {
+      Serial.println("Resending NTP Request");
+      sendNTPpacket(timeServer);
+      }
+    }
+  Serial.println("No NTP Response :-(");
+  return 0; // return 0 if unable to get the time
+  }
+
+// send an NTP request to the time server at the given address
+void sendNTPpacket(IPAddress &address)
+  {
+  // set all bytes in the buffer to 0
+  memset(packetBuffer, 0, NTP_PACKET_SIZE);
+  // Initialize values needed to form NTP request
+  // (see URL above for details on the packets)
+  packetBuffer[0] = 0b11100011;   // LI, Version, Mode
+  packetBuffer[1] = 0;     // Stratum, or type of clock
+  packetBuffer[2] = 6;     // Polling Interval
+  packetBuffer[3] = 0xEC;  // Peer Clock Precision
+  // 8 bytes of zero for Root Delay & Root Dispersion
+  packetBuffer[12]  = 49;
+  packetBuffer[13]  = 0x4E;
+  packetBuffer[14]  = 49;
+  packetBuffer[15]  = 52;
+  // all NTP fields have been given values, now
+  // you can send a packet requesting a timestamp:                 
+  Udp.beginPacket(address, 123); //NTP requests are to port 123
+  Udp.write(packetBuffer, NTP_PACKET_SIZE);
+  Udp.endPacket();
+  }
+
 
 char* getConfigPage(String message)
   {
@@ -205,13 +299,23 @@ char* getConfigPage(String message)
 void factoryReset()
   {
   Serial.println("Received factory reset request");
-  boolean valid=false;
-  EEPROM.put(EEPROM_ADDR_FLAG,valid);
-  EEPROM.commit();
-  server.sendHeader("Location", String("http://lightning.local/"), true);
-  server.send(303, "text/plain", ""); //gonna need to configure it again
-  delay(500);
-  ESP.restart();   
+  char res[]="reset";
+  if (server.hasArg("plain")== false
+    ||strcmp(res,server.arg("reset").c_str())!=0 ) 
+    {
+    server.send(200, "text/html", "Request method must be POST with reset=true" ); //not a POST request
+    Serial.println("Not a POST, failed.");
+    }
+  else
+    {
+    boolean valid=false;
+    EEPROM.put(EEPROM_ADDR_FLAG,valid);
+    EEPROM.commit();
+    server.sendHeader("Location", String("http://lightning.local/"), true);
+    server.send(303, "text/plain", ""); //gonna need to configure it again
+    delay(500);
+    ESP.restart();   
+    }
   }
 
 void setConfig()
@@ -239,6 +343,9 @@ void setConfig()
       }
     else 
       {
+      boolean needsReboot=strcmp(myMDNS,server.arg("mdns").c_str())!=0
+                        ||strcmp(ssid,server.arg("ssid").c_str())!=0;
+
       sensitivity=sens;
       strcpy(myMDNS,server.arg("mdns").c_str());
       strcpy(ssid,server.arg("ssid").c_str());
@@ -261,10 +368,18 @@ void setConfig()
       else
         {
         Serial.println("Configuration stored to EEPROM");
-        server.sendHeader("Location", String("http://"+server.arg("mdns")+".local/"), true);
-        server.send(303, "text/plain", ""); //send them to the factory reset page
-        delay(1000);
-        ESP.restart();
+        if (needsReboot)
+          {
+          server.sendHeader("Location", String("http://"+server.arg("mdns")+".local/"), true);
+          server.send(303, "text/plain", ""); //send them to the factory reset page
+          delay(1000);
+          ESP.restart();
+          }
+        else
+          {
+          server.sendHeader("Location", String("/"), true);
+          server.send(303, "text/plain", ""); //send them to the main page
+          }
         }
       }
     }
@@ -511,7 +626,9 @@ String getStatus(int type)
   String h2open=type==TYPE_HTML?"<h2>":"";
   String h2close=type==TYPE_HTML?"</h2>":"";
   String msg=type==TYPE_JSON?"{\"lightning\":{":"";
-  
+
+  char timebuf[25];
+  msg+=fmt("Current time",displayTime(tod+(millis()-baseMillis)/1000, timebuf),type,false);
   msg+=fmt("Uptime",msToAge(millis()),type,false);
   msg+=fmt("Sensitivity",itoa(sensitivity,temp,10),type,false);
   msg+=fmt("Illumination",itoa(thisReading,temp,10),type,false);

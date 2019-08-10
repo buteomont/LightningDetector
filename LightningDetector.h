@@ -31,6 +31,8 @@
 #define EEPROM_ADDR_MDNS EEPROM_ADDR_PASSWORD+PASSWORD_SIZE
 #define EEPROM_ADDR_SENSITIVITY EEPROM_ADDR_MDNS+MDNS_SIZE
 
-
+#define NIST_PORT     13
+#define NIST_HOST     "time.nist.gov"
+#define NTP_PACKET_SIZE 48
 
 #define DEBUG false  //to show plotter graph
