@@ -195,7 +195,9 @@ void setup()
 //  Serial.println(xPortGetCoreID());
 
   //Ready to loop
+  Serial.println(getConfiguration(TYPE_TEXT));
   Serial.println(getStatus(TYPE_TEXT));
+  Serial.println(getStrikes(TYPE_TEXT));
   Serial.println("Ready.");
   Serial.println("");
   }
@@ -417,7 +419,13 @@ void sendText()
   {
   Serial.println("Received request for text data");
 
-  server.send(200, "text/plain",getStatus(TYPE_TEXT));
+  server.send(200, "text/plain","---Status---\n"
+                                +getStatus(TYPE_TEXT)
+                                +"\n---Configuration---\n"
+                                +getConfiguration(TYPE_TEXT)
+                                +"\n---Strikes---\n"
+                                +getStrikes(TYPE_TEXT)
+                                );
   
   Serial.println("Response sent for text data");
   };
@@ -427,7 +435,13 @@ void sendJson()
   {
   Serial.println("Received request for JSON data");
   
-  server.send(200, "text/plain",getStatus(TYPE_JSON));
+  server.send(200, "application/json","{\"Status\":{"
+                                +getStatus(TYPE_JSON)
+                                +"},\"Configuration\":{"
+                                +getConfiguration(TYPE_JSON)
+                                +"},\"Strikes\":{"
+                                +getStrikes(TYPE_JSON)
+                                +"}");
 
   Serial.println("Response sent for JSON data");
   }
@@ -453,10 +467,12 @@ void documentRoot()
     </head>\
     <body>\
       <div style=\"text-align: center;\"><h1>Optical Lightning Detector</h1></div>\
-      <p><h2><a href=\"/configure\">Configuration</a> and Status</h2>\
-      mDNS: \""+String(myMDNS)+".local\"<br>\
-      Address: "+WiFi.localIP().toString()+"<br><br>"
+      <p><h2>Status</h2>"
       +getStatus(TYPE_HTML)
+      +"<h2><a href=\"/configure\">Configuration</a></h2>"
+      +getConfiguration(TYPE_HTML)
+      +"<h2>Strike Data:</h2>"
+      +getStrikes(TYPE_HTML)
       +"</p>\
     </body>\
   </html>";
@@ -625,27 +641,46 @@ String fmt(String name, String value, int type, boolean lastOne)
     return result;
   }
 
+String getStatus(int type)
+  {
+  char temp[11];
+  String cret=type==TYPE_HTML?"<br>":type==TYPE_JSON?"":"\n";
+  char timebuf[25];
+
+  String msg=fmt("Address",WiFi.localIP().toString(),type,false);
+  msg+=fmt("Time",displayTime(now(), timebuf, " "),type,false);
+  msg+=fmt("Uptime",msToAge(millis()),type,false);
+  msg+=fmt("Illumination",itoa(thisReading,temp,10),type,true);
+  return msg;
+  }
+
+
 /*
 * Return a string with all relevant variables.
 * Type is 1 for text, 2 for HTML, 3 for JSON
 */
-String getStatus(int type)
+String getConfiguration(int type)
   {
   char temp[11];
   String cret=type==TYPE_HTML?"<br>":type==TYPE_JSON?"":"\n";
   String h2open=type==TYPE_HTML?"<h2>":"";
   String h2close=type==TYPE_HTML?"</h2>":"";
-  String msg=type==TYPE_JSON?"{\"lightning\":{":"";
 
-  char timebuf[25];
-  msg+=fmt("Current time",displayTime(now(), timebuf, " "),type,false);
-  msg+=fmt("Uptime",msToAge(millis()),type,false);
-  msg+=fmt("Sensitivity",itoa(sensitivity,temp,10),type,false);
-  msg+=fmt("Illumination",itoa(thisReading,temp,10),type,false);
+  String msg=fmt("SSID",String(ssid),type,false);
+  msg+=fmt("mDNS",String(myMDNS)+".local",type,false);
+  msg+=fmt("Sensitivity",itoa(sensitivity,temp,10),type,true);
+  return msg;
+  }
 
-  if (type!=TYPE_JSON)
-    msg+=cret+h2open+"Strike Data:"+h2close+(type==TYPE_HTML?"":cret+cret);
-  msg+=fmt("Past hour",itoa(getRecent(HOUR_MILLISECS/1000),temp,10),type,false);
+  
+String getStrikes(int type)
+  {
+  char temp[11];
+  String cret=type==TYPE_HTML?"<br>":type==TYPE_JSON?"":"\n";
+  String h2open=type==TYPE_HTML?"<h2>":"";
+  String h2close=type==TYPE_HTML?"</h2>":"";
+  
+  String msg=fmt("Past hour",itoa(getRecent(HOUR_MILLISECS/1000),temp,10),type,false);
   msg+=fmt("Past 24 hours",itoa(getRecent(DAY_MILLISECS/1000),temp,10),type,false);
   msg+=fmt("Past 7 days",itoa(getRecent((DAY_MILLISECS/1000)*7),temp,10),type,false);
   msg+=fmt("Past 30 days",itoa(getRecent((DAY_MILLISECS/1000)*30L),temp,10),type,false);
@@ -662,7 +697,7 @@ String getStatus(int type)
     }
   else
     msg+=fmt(cret+h2open+"Strike Log"+h2close,lbr+getStrikeLog(type)+rbr,type,true);
-  msg+=type==TYPE_JSON?"}}":"";
+  msg+=type==TYPE_JSON?"}":"";
   return msg;
   }
 
@@ -745,38 +780,15 @@ void loadSettings()
   EEPROM.get(EEPROM_ADDR_FLAG,valid);
   if (valid)    //skip loading stuff if it's never been written
     {
+    Serial.println("Loading configuration values from EEPROM");
     EEPROM.get(EEPROM_ADDR_SSID,ssid);
     EEPROM.get(EEPROM_ADDR_PASSWORD,password);
     EEPROM.get(EEPROM_ADDR_MDNS,myMDNS);
     EEPROM.get(EEPROM_ADDR_SENSITIVITY,sensitivity);
-  
-    Serial.println("myMDNS is "+String(myMDNS));
     }
   else
     Serial.println("Skipping load from EEPROM, device not configured.");
   }
-
-
-
-///*
-//*  Initialize the EEPROM settings to default values
-//*/
-//void init_variables()
-//  {
-//  // Sensitivity
-//  sensitivity=DEFAULT_SENSITIVITY;
-//  char* sens=(char*)&sensitivity; //get the location of the 4-byte float
-//  EEPROM.write(EEPROM_SENSITIVITY+0,sens[0]);
-//  EEPROM.write(EEPROM_SENSITIVITY+1,sens[1]);
-//  EEPROM.write(EEPROM_SENSITIVITY+2,sens[2]);
-//  EEPROM.write(EEPROM_SENSITIVITY+3,sens[3]);
-//
-//  // Max Slew Rate
-//  
-//  
-//  // Reset Delay
-//  
-//  }
 
 
 //Read the solar cell.  We take the average of several readings because the ADC on 
