@@ -59,12 +59,11 @@ long strikeWaitTime; //to keep from having to use delay()
 int intensity;       //temporary storage to record the intensity of the strike for the log
 boolean configured=false;  //don't look for lightning until we are set up
 time_t tod=0;         //time of day
-time_t baseMillis=0;  //The millis() reading at the time we got the time from NIST
 
 IPAddress timeServer(132,163,96,2);  //time.nist.gov
 
 ESP8266WebServer server(80);
-WiFiUDP Udp;
+WiFiUDP Udp; //for getting time from NIST
 
 unsigned int localPort = 8888;  // local port to listen for UDP packets
 const int timeZone = -4;  // Eastern Daylight Time (USA)
@@ -176,12 +175,18 @@ void setup()
 
   Udp.begin(localPort);
   tod=getNtpTime(); //initialize the TOD clock
-  baseMillis=millis();
+  setTime(tod);
+
+  Serial.print("millis() is ");
+  Serial.println(millis());
+  Serial.print("now() is ");
+  Serial.println(now());
+  
 //  Serial.print("The time is ");
 //  if (tod>0)
 //    {
 //    char timebuf[25];
-//    Serial.println(displayTime(tod,timebuf));
+//    Serial.println(displayTime(tod,timebuf," "));
 //    }
 //  else
 //    Serial.println("unknown.");
@@ -210,15 +215,16 @@ void loop()
   }
 
 //format the time to be human-readable
-char* displayTime(time_t mytime, char* buf)
+char* displayTime(time_t mytime, char* buf, String separator)
   {
   // digital clock display of the time
-  sprintf(buf,"%d/%d/%d %d:%02d:%02d",month(mytime),
-                                    day(mytime),
-                                    year(mytime),
-                                    hour(mytime),
-                                    minute(mytime),
-                                    second(mytime)); 
+  String tmplate="%d/%d/%d"+separator+"%d:%02d:%02d";
+  sprintf(buf,tmplate.c_str(), month(mytime),
+                        day(mytime),
+                        year(mytime),
+                        hour(mytime),
+                        minute(mytime),
+                        second(mytime)); 
   return buf;
   }
 
@@ -441,6 +447,8 @@ void documentRoot()
       <title>Lightning Detector</title>\
       <style>\
         body { background-color: #cccccc; font-family: Arial, Helvetica, Sans-Serif; Color: #000088; }\
+        table {border: 1px solid black;}\
+        th, td {border: 1px solid black; padding: 0px 10px 0px 10px;}\
       </style>\
     </head>\
     <body>\
@@ -532,7 +540,7 @@ void strike(unsigned int brightness)
   digitalWrite(RELAY_PIN, HIGH);    //turn on the relay
   resetCounter=resetDelay;        //"debounce" the strike
   int index=strikeCount++ % MAX_STRIKES;
-  strikes[index]=millis();  //record the time of this strike
+  strikes[index]=now();  //record the time of this strike
   strikeIntensity[index]=brightness;
   }
 
@@ -602,8 +610,10 @@ String fmt(String name, String value, int type, boolean lastOne)
       result=name+": "+value+"\n";
       break;
     case TYPE_HTML:
-    case TYPE_TABLE: //later
       result=name+": "+value+"<br>";
+      break;
+    case TYPE_TABLE: //later
+      result=name+"</td><td>"+value+"</td></tr>";
       break;
     case TYPE_JSON:
       result="\""+name+"\""+": "+quote+value+quote+(lastOne?"":",");
@@ -628,17 +638,17 @@ String getStatus(int type)
   String msg=type==TYPE_JSON?"{\"lightning\":{":"";
 
   char timebuf[25];
-  msg+=fmt("Current time",displayTime(tod+(millis()-baseMillis)/1000, timebuf),type,false);
+  msg+=fmt("Current time",displayTime(now(), timebuf, " "),type,false);
   msg+=fmt("Uptime",msToAge(millis()),type,false);
   msg+=fmt("Sensitivity",itoa(sensitivity,temp,10),type,false);
   msg+=fmt("Illumination",itoa(thisReading,temp,10),type,false);
 
   if (type!=TYPE_JSON)
     msg+=cret+h2open+"Strike Data:"+h2close+(type==TYPE_HTML?"":cret+cret);
-  msg+=fmt("Past hour",itoa(getRecent(HOUR_MILLISECS),temp,10),type,false);
-  msg+=fmt("Past 24 hours",itoa(getRecent(DAY_MILLISECS),temp,10),type,false);
-  msg+=fmt("Past 7 days",itoa(getRecent(DAY_MILLISECS*7),temp,10),type,false);
-  msg+=fmt("Past 30 days",itoa(getRecent(DAY_MILLISECS*30L),temp,10),type,false);
+  msg+=fmt("Past hour",itoa(getRecent(HOUR_MILLISECS/1000),temp,10),type,false);
+  msg+=fmt("Past 24 hours",itoa(getRecent(DAY_MILLISECS/1000),temp,10),type,false);
+  msg+=fmt("Past 7 days",itoa(getRecent((DAY_MILLISECS/1000)*7),temp,10),type,false);
+  msg+=fmt("Past 30 days",itoa(getRecent((DAY_MILLISECS/1000)*30L),temp,10),type,false);
   msg+=fmt("Total Strikes",itoa(strikeCount,temp,10),type,false);
   
   String lbr=type==TYPE_JSON?"[":type==TYPE_HTML?"":"\n"; //left bracket
@@ -646,7 +656,9 @@ String getStatus(int type)
   if (type==TYPE_HTML)
     {
     msg+=h2open+"Strike Log:"+h2close;
-    msg+=getStrikeLog(type);
+    msg+="<table><tr><th>#</th><th>Date</th><th>Time</th><th>Intensity</th></tr>";
+    msg+=getStrikeLog(TYPE_TABLE);
+    msg+="</table>";
     }
   else
     msg+=fmt(cret+h2open+"Strike Log"+h2close,lbr+getStrikeLog(type)+rbr,type,true);
@@ -657,9 +669,10 @@ String getStatus(int type)
 String getStrikeLog(int type)
   {
   char temp[11];
+  char timebuf[25];
   String msg="";
-  long now=millis();
   boolean lastEntry=false;
+  
   for (int i=strikeCount-1;i>=0;i--)
     {
     lastEntry=(i==0);
@@ -667,14 +680,21 @@ String getStrikeLog(int type)
      
     if (type==TYPE_JSON)
       {
-      msg+="{"+fmt(msToAge(now-strikes[j]),itoa(strikeIntensity[j],temp,10),type,true)+"}";
+      msg+="{"+fmt(itoa(strikes[j],temp,10),itoa(strikeIntensity[j],temp,10),type,true)+"}";
       msg+=(lastEntry?"":",");
+      }
+    else if (type==TYPE_TABLE)
+      {
+      msg+="<tr><td>";
+      msg+=itoa(i+1,temp,10);
+      msg+="</td><td>";
+      msg+=fmt(displayTime(strikes[j],timebuf,"</td><td>"),itoa(strikeIntensity[j],temp,10),type,lastEntry);
       }
     else
       {
       msg+=itoa(i+1,temp,10);
       msg+=" - ";
-      msg+=fmt(msToAge(now-strikes[j]),itoa(strikeIntensity[j],temp,10),type,lastEntry);
+      msg+=fmt(displayTime(strikes[j],timebuf," "),itoa(strikeIntensity[j],temp,10),type,lastEntry);
       }
     } 
   return msg;
@@ -683,14 +703,14 @@ String getStrikeLog(int type)
 
 
 /*
-* Return the number of strikes recorded in the past (age) milliseconds
+* Return the number of strikes recorded in the past (age) seconds
 */
 int getRecent(unsigned long age)
   {
   int count=0;  
-    
+
   //get the run time and subtract age, but don't go below 0
-  unsigned long oldest=millis();
+  unsigned long oldest=now();
   if (oldest>age)  
     oldest-=age;
   else
