@@ -173,10 +173,13 @@ void setup()
   Serial.println("HTTP server started");
   strikeWaitTime=millis(); //initialize the delay counter
 
-  Udp.begin(localPort);
-  tod=getNtpTime(); //initialize the TOD clock
-  setTime(tod);
-
+  if (configured)
+    {
+    Udp.begin(localPort);
+    tod=getNtpTime(); //initialize the TOD clock
+    setTime(tod);
+    }
+    
   Serial.print("millis() is ");
   Serial.println(millis());
   Serial.print("now() is ");
