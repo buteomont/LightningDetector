@@ -534,10 +534,10 @@ void checkForStrike()
         if (millis()>=strikeWaitTime) 
           {
           readSensor();
-          if (thisReading <= lastReading+sensitivity) //should not still be going, maybe someone turned on the light
+          if (thisReading <= lastReading+sensitivity) //should not still be going, maybe someone turned on the light?
             {
             strikeStage++;   //Take us to default case until this strike is over
-            Serial.print("Strike confirmed! - ");
+            Serial.print("********** Strike confirmed! - ");
             Serial.println(intensity);
             strike(intensity);  //yep, record it    
             }
