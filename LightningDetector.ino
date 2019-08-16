@@ -37,9 +37,9 @@ IPAddress local_IP(192,168,1,1);
 IPAddress gateway(192,168,1,254);
 IPAddress subnet(255,255,255,0);
 
-char ssid[SSID_SIZE] = AP_SSID;
-char password[PASSWORD_SIZE] = AP_PASS;
-char myMDNS[MDNS_SIZE]=MY_MDNS;
+//char ssid[SSID_SIZE] = AP_SSID;
+//char password[PASSWORD_SIZE] = AP_PASS;
+//char myMDNS[MDNS_SIZE]=MY_MDNS;
 
 const char *htmlCr="<br>";
 const char *textCr="\n\r";
@@ -49,7 +49,7 @@ int thisReading = 0;
 int errval=128; //half way
 int resetCounter=0; //keeps the LED lit long enough to see it when a strike happens
 int resetDelay=100;  //this is how many milliseconds (approx) the LED stays lit after lightning is seen
-int sensitivity=10;  //successive readings have to be at least this much larger than the last reading to register as a strike
+//int sensitivity=10;  //successive readings have to be at least this much larger than the last reading to register as a strike
 unsigned long strikes[MAX_STRIKES];       //strike time log
 unsigned int strikeIntensity[MAX_STRIKES];//strike brightness log
 int strikeCount=0;  //number of strikes in the log
@@ -67,6 +67,20 @@ WiFiUDP Udp; //for getting time from NIST
 
 unsigned int localPort = 8888;  // local port to listen for UDP packets
 const int timeZone = -4;  // Eastern Daylight Time (USA)
+
+typedef struct 
+  {
+  boolean valid=false; //***** This must remain the first item in this structure! *******
+  char ssid[SSID_SIZE] = AP_SSID;
+  char password[PASSWORD_SIZE] = AP_PASS;
+  char myMDNS[MDNS_SIZE]=MY_MDNS;
+  int sensitivity=10;  //successive readings have to be at least this much larger than the last reading to register as a strike
+  boolean useStatic=false;
+  int statIP[4]={0,0,0,0};
+  int statGW[4]={0,0,0,0};
+  } conf;
+
+conf settings; //all settings in one struct makes it easier to store in EEPROM
 
 void setup()
   {
@@ -93,13 +107,13 @@ void setup()
   //turning the LED off and writing the value back to EEPROM two seconds later.
   boolean conf;
   boolean noConf=false;
-  EEPROM.get(EEPROM_ADDR_FLAG,conf);  //save original value
-  EEPROM.put(EEPROM_ADDR_FLAG,noConf);//write "false" for non-configured
+  EEPROM.get(0,conf);                 //save original value
+  EEPROM.put(0,noConf);               //write "false" for non-configured
   EEPROM.commit();                    //do the write
   digitalWrite(LIGHTNING_LED_PIN,LOW);//Turn on the LED
   delay(2000);                        //wait a sec
   digitalWrite(LIGHTNING_LED_PIN,HIGH);//Turn the LED back off
-  EEPROM.put(EEPROM_ADDR_FLAG,conf);  //If we are here then no double-click, write the original back
+  EEPROM.put(0,conf);                 //If we are here then no double-click, write the original back
   EEPROM.commit();                    //do the write
 
   loadSettings(); //load the editable settings from eeprom
@@ -111,11 +125,11 @@ void setup()
   lastReading=thisReading;
   
   //Get the WiFi going
-  if (strcmp(AP_SSID,ssid)==0) //using the default SSID?  If so then open the configure page
+  if (strcmp(AP_SSID,settings.ssid)==0) //using the default SSID?  If so then open the configure page
     {
-    Serial.print("Configuring soft access point. SSID is \""+String(ssid)+"\". ");
+    Serial.print("Configuring soft access point. SSID is \""+String(settings.ssid)+"\". ");
     WiFi.softAPConfig(local_IP, gateway, subnet);
-    WiFi.softAP(ssid, password);
+    WiFi.softAP(settings.ssid, settings.password);
   
     IPAddress myIP = WiFi.softAPIP();
     Serial.print("IP address is ");
@@ -124,10 +138,20 @@ void setup()
   else
     {
     configured=true;  //we are configured
-    WiFi.mode(WIFI_STA);
     WiFi.disconnect();
-    Serial.println("Connecting to "+String(ssid)+" with password "+String(password));
-    WiFi.begin(ssid, password);
+    WiFi.hostname(settings.myMDNS);
+    if (settings.useStatic)
+      {
+      Serial.println("Using static addressing");
+      IPAddress staticIP(settings.statIP[0],settings.statIP[1],settings.statIP[2],settings.statIP[3]); //ESP static ip
+      IPAddress gateway(settings.statGW[0],settings.statGW[1],settings.statGW[2],settings.statGW[3]);   //IP Address of your WiFi Router (Gateway)
+      IPAddress subnet(255, 255, 255, 0);  //Subnet mask
+      WiFi.config(staticIP, subnet, gateway);
+      }
+      
+    WiFi.mode(WIFI_STA);
+    Serial.println("Connecting to "+String(settings.ssid)+" with password "+String(settings.password));
+    WiFi.begin(settings.ssid, settings.password);
     Serial.print("Connecting");
   
     // Wait for connection
@@ -145,14 +169,14 @@ void setup()
   
     Serial.println("");
     Serial.print("Connected to ");
-    Serial.println(ssid);
+    Serial.println(settings.ssid);
     Serial.print("IP address: ");
     Serial.println(WiFi.localIP());       
     }
 
-  if (MDNS.begin(myMDNS)) {
+  if (MDNS.begin(settings.myMDNS)) {
     Serial.print("MDNS responder started as ");
-    Serial.print(myMDNS);
+    Serial.print(settings.myMDNS);
     Serial.println(".local");
   }
 
@@ -201,6 +225,7 @@ void setup()
   Serial.println(getConfiguration(TYPE_TEXT));
   Serial.println(getStatus(TYPE_TEXT));
   Serial.println(getStrikes(TYPE_TEXT));
+
   Serial.println("Ready.");
   Serial.println("");
   }
@@ -300,28 +325,38 @@ char* getConfigPage(String message)
   char temp[11];
   sprintf_P(configBuf,(PGM_P)FPSTR(configPage),
               message.c_str(),
-              ssid,
-              password,
-              myMDNS,
-              itoa(sensitivity,temp,10));
+              settings.ssid,
+              settings.password,
+              settings.myMDNS,
+              settings.useStatic?" checked":"",
+              settings.statIP[0],
+              settings.statIP[1],
+              settings.statIP[2],
+              settings.statIP[3],
+              settings.statGW[0],
+              settings.statGW[1],
+              settings.statGW[2],
+              settings.statGW[3],
+              settings.sensitivity);
   return configBuf;
   }
 
 void factoryReset()
   {
   Serial.println("Received factory reset request");
-  char res[]="reset";
+  Serial.println("POST data: "+server.arg("plain"));
+  
+  char res[]="true";
   if (server.hasArg("plain")== false
-    ||strcmp(res,server.arg("reset").c_str())!=0 ) 
+    ||strcmp(res,server.arg("factory_reset").c_str())!=0 ) 
     {
-    server.send(200, "text/html", "Request method must be POST with reset=true" ); //not a POST request
+    server.send(200, "text/html", "Request method must be POST with factory_reset=true" ); //not a POST request
     Serial.println("Not a POST, failed.");
     }
   else
     {
-    boolean valid=false;
-    EEPROM.put(EEPROM_ADDR_FLAG,valid);
-    EEPROM.commit();
+    settings.valid=false;
+    saveSettings();
     server.sendHeader("Location", String("http://lightning.local/"), true);
     server.send(303, "text/plain", ""); //gonna need to configure it again
     delay(500);
@@ -342,35 +377,73 @@ void setConfig()
     String message="Configuration Updated"; //if all goes well
     Serial.println("POST data: "+server.arg("plain"));
 
-    int sens=atoi(server.arg("sensitivity").c_str());
+    String new_ssid=server.arg("ssid");
+    String new_password=server.arg("pword");
+    String new_myMDNS=server.arg("mdns");
+    int new_sensitivity=atoi(server.arg("sensitivity").c_str());
+    boolean new_useStatic=strcmp(server.arg("Static").c_str(),"true")==0;
 
-    if (strcmp(myMDNS,server.arg("mdns").c_str())==0
-      &&strcmp(ssid,server.arg("ssid").c_str())==0
-      &&strcmp(password,server.arg("pword").c_str())==0
-      &&sensitivity==sens)
+    int new_statIP0=atoi(server.arg("addrOctet0").c_str());
+    int new_statIP1=atoi(server.arg("addrOctet1").c_str());
+    int new_statIP2=atoi(server.arg("addrOctet2").c_str());
+    int new_statIP3=atoi(server.arg("addrOctet3").c_str());
+    
+    int new_statGW0=atoi(server.arg("gwOctet0").c_str());
+    int new_statGW1=atoi(server.arg("gwOctet1").c_str());
+    int new_statGW2=atoi(server.arg("gwOctet2").c_str());
+    int new_statGW3=atoi(server.arg("gwOctet3").c_str());
+
+    if (strcmp(settings.myMDNS,new_myMDNS.c_str())==0
+      &&strcmp(settings.ssid,new_ssid.c_str())==0
+      &&strcmp(settings.password,new_password.c_str())==0
+      &&settings.useStatic==new_useStatic
+      && settings.statIP[0]==new_statIP0
+      && settings.statIP[1]==new_statIP1
+      && settings.statIP[2]==new_statIP2
+      && settings.statIP[3]==new_statIP3
+      && settings.statGW[0]==new_statGW0 
+      && settings.statGW[1]==new_statGW1 
+      && settings.statGW[2]==new_statGW2 
+      && settings.statGW[3]==new_statGW3 
+      &&settings.sensitivity==new_sensitivity)
       {
       server.sendHeader("Location", String("/"), true);
       server.send(303, "text/plain", ""); //send them back to the configuration page
       }
     else 
       {
-      boolean needsReboot=strcmp(myMDNS,server.arg("mdns").c_str())!=0
-                        ||strcmp(ssid,server.arg("ssid").c_str())!=0;
+      boolean needsReboot=strcmp(settings.myMDNS,new_myMDNS.c_str())!=0
+                        ||strcmp(settings.ssid,new_ssid.c_str())!=0
+                        ||settings.useStatic!=new_useStatic
+                        ||settings.statIP[0]!=new_statIP0
+                        ||settings.statIP[1]!=new_statIP1
+                        ||settings.statIP[2]!=new_statIP2
+                        ||settings.statIP[3]!=new_statIP3
+                        ||settings.statGW[0]!=new_statGW0 
+                        ||settings.statGW[1]!=new_statGW1 
+                        ||settings.statGW[2]!=new_statGW2 
+                        ||settings.statGW[3]!=new_statGW3;
 
-      sensitivity=sens;
-      strcpy(myMDNS,server.arg("mdns").c_str());
-      strcpy(ssid,server.arg("ssid").c_str());
-      strcpy(password,server.arg("pword").c_str());
-  
-      boolean valid=true;
-      EEPROM.put(EEPROM_ADDR_FLAG,valid);
-      EEPROM.put(EEPROM_ADDR_SSID,ssid);
-      EEPROM.put(EEPROM_ADDR_PASSWORD,password);
-      EEPROM.put(EEPROM_ADDR_MDNS,myMDNS);
-      EEPROM.put(EEPROM_ADDR_SENSITIVITY,sensitivity);
+      settings.sensitivity=new_sensitivity;
+      strcpy(settings.myMDNS,new_myMDNS.c_str());
+      strcpy(settings.ssid,new_ssid.c_str());
+      strcpy(settings.password,new_password.c_str());
+      settings.useStatic=new_useStatic;
+      if (settings.useStatic)
+        {
+        settings.statIP[0]=new_statIP0;
+        settings.statIP[1]=new_statIP1;
+        settings.statIP[2]=new_statIP2;
+        settings.statIP[3]=new_statIP3;
+        settings.statGW[0]=new_statGW0;
+        settings.statGW[1]=new_statGW1;
+        settings.statGW[2]=new_statGW2;
+        settings.statGW[3]=new_statGW3;
+        }
+      settings.valid=true;
   
       //perform the actual write to eeprom
-      if (!EEPROM.commit())
+      if (!saveSettings())
         {
         Serial.println("Storing to eeprom failed!");
         message="Could not store configuration values!";
@@ -496,7 +569,7 @@ void checkForStrike()
     {
     case 0:
       readSensor(); //take a reading
-      if (thisReading > lastReading+sensitivity) //Is this reading brighter than the last one?
+      if (thisReading > lastReading+settings.sensitivity) //Is this reading brighter than the last one?
         {
         intensity=thisReading-lastReading; //save the brightness
         strikeStage++;   //may be a real strike, go to stage 1
@@ -515,7 +588,7 @@ void checkForStrike()
       if (millis()>=strikeWaitTime) 
         {
         readSensor();
-        if (thisReading > lastReading+sensitivity) //still going?
+        if (thisReading > lastReading+settings.sensitivity) //still going?
           {
           strikeStage++;   //looking like a real strike, go to stage 2
           strikeWaitTime=millis()+MAX_STRIKE_WIDTH;
@@ -534,7 +607,7 @@ void checkForStrike()
         if (millis()>=strikeWaitTime) 
           {
           readSensor();
-          if (thisReading <= lastReading+sensitivity) //should not still be going, maybe someone turned on the light?
+          if (thisReading <= lastReading+settings.sensitivity) //should not still be going, maybe someone turned on the light?
             {
             strikeStage++;   //Take us to default case until this strike is over
             Serial.print("********** Strike confirmed! - ");
@@ -650,7 +723,8 @@ String getStatus(int type)
   String cret=type==TYPE_HTML?"<br>":type==TYPE_JSON?"":"\n";
   char timebuf[25];
 
-  String msg=fmt("Address",WiFi.localIP().toString(),type,false);
+  String addr=WiFi.localIP().toString()+(settings.useStatic?" (static)":"");
+  String msg=fmt("Address",addr,type,false);
   msg+=fmt("Time",displayTime(now(), timebuf, " "),type,false);
   msg+=fmt("Uptime",msToAge(millis()),type,false);
   msg+=fmt("Illumination",itoa(thisReading,temp,10),type,true);
@@ -669,9 +743,9 @@ String getConfiguration(int type)
   String h2open=type==TYPE_HTML?"<h2>":"";
   String h2close=type==TYPE_HTML?"</h2>":"";
 
-  String msg=fmt("SSID",String(ssid),type,false);
-  msg+=fmt("mDNS",String(myMDNS)+".local",type,false);
-  msg+=fmt("Sensitivity",itoa(sensitivity,temp,10),type,true);
+  String msg=fmt("SSID",String(settings.ssid),type,false);
+  msg+=fmt("mDNS",String(settings.myMDNS)+".local",type,false);
+  msg+=fmt("Sensitivity",itoa(settings.sensitivity,temp,10),type,true);
   return msg;
   }
 
@@ -774,23 +848,43 @@ void reset_totals()
   strikeCount=0;
   }
 
+boolean saveSettings()
+  {
+  EEPROM.put(0,settings);
+  return EEPROM.commit();
+  }
+
+
 /*
 *  Initialize the settings from eeprom
 */
 void loadSettings()
   {
-  boolean valid=false;
-  EEPROM.get(EEPROM_ADDR_FLAG,valid);
-  if (valid)    //skip loading stuff if it's never been written
+  EEPROM.get(0,settings);
+  if (settings.valid)    //skip loading stuff if it's never been written
     {
-    Serial.println("Loading configuration values from EEPROM");
-    EEPROM.get(EEPROM_ADDR_SSID,ssid);
-    EEPROM.get(EEPROM_ADDR_PASSWORD,password);
-    EEPROM.get(EEPROM_ADDR_MDNS,myMDNS);
-    EEPROM.get(EEPROM_ADDR_SENSITIVITY,sensitivity);
+    Serial.println("Loaded configuration values from EEPROM");
     }
   else
+    {
     Serial.println("Skipping load from EEPROM, device not configured.");
+    strcpy(settings.ssid,AP_SSID);
+    strcpy(settings.password,AP_PASS);
+    strcpy(settings.myMDNS,MY_MDNS);
+//    settings.ssid[SSID_SIZE] = AP_SSID;
+//    settings.password[PASSWORD_SIZE] = AP_PASS;
+//    settings.myMDNS[MDNS_SIZE]=MY_MDNS;
+    settings.sensitivity=10;  //successive readings have to be at least this much larger than the last reading to register as a strike
+    settings.useStatic=false;
+    settings.statIP[0]=0;
+    settings.statIP[1]=0;
+    settings.statIP[2]=0;
+    settings.statIP[3]=0;
+    settings.statGW[0]=0;
+    settings.statGW[1]=0;
+    settings.statGW[2]=0;
+    settings.statGW[3]=0;
+    }
   }
 
 
