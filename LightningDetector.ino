@@ -185,7 +185,8 @@ void setup()
   server.on("/json", sendJson);
   server.on("/text", sendText);
   server.on("/configure", setConfig);
-  server.on("/reset",factoryReset);
+//  server.on("/reset",factoryReset);
+  server.on("/clear", clearLog);
   server.on("/bad", []() 
     {
     Serial.println("Received request for bad data");
@@ -341,28 +342,47 @@ char* getConfigPage(String message)
   return configBuf;
   }
 
-void factoryReset()
+void clearLog()
   {
-  Serial.println("Received factory reset request");
+  Serial.println("Received clear log request");
   Serial.println("POST data: "+server.arg("plain"));
-  
-  char res[]="true";
+  char res[]="CLEAR";
   if (server.hasArg("plain")== false
-    ||strcmp(res,server.arg("factory_reset").c_str())!=0 ) 
+    ||strcmp(res,server.arg("clear_log").c_str())!=0) 
     {
-    server.send(200, "text/html", "Request method must be POST with factory_reset=true" ); //not a POST request
-    Serial.println("Not a POST, failed.");
+    server.send(400, "text/html", "Request method must be POST with clear_log=true"); //not a POST request
+    Serial.println("Not a POST or invalid request, failed.");
     }
   else
     {
-    settings.valid=false;
-    saveSettings();
-    server.sendHeader("Location", String("http://lightning.local/"), true);
-    server.send(303, "text/plain", ""); //gonna need to configure it again
-    delay(500);
-    ESP.restart();   
+    strikeCount=0;  //reset the pointer to the log head
+    Serial.println("Log cleared.");
+    documentRoot();
     }
   }
+  
+//void factoryReset()
+//  {
+//  Serial.println("Received factory reset request");
+//  Serial.println("POST data: "+server.arg("plain"));
+//  
+//  char res[]="true";
+//  if (server.hasArg("plain")== false
+//    ||strcmp(res,server.arg("factory_reset").c_str())!=0 ) 
+//    {
+//    server.send(200, "text/html", "Request method must be POST with factory_reset=true" ); //not a POST request
+//    Serial.println("Not a POST, failed.");
+//    }
+//  else
+//    {
+//    settings.valid=false;
+//    saveSettings();
+//    server.sendHeader("Location", String("http://lightning.local/"), true);
+//    server.send(303, "text/plain", ""); //gonna need to configure it again
+//    delay(500);
+//    ESP.restart();   
+//    }
+//  }
 
 void setConfig()
   {
@@ -531,9 +551,9 @@ void documentRoot()
     setConfig();
     return;
     }
-  String page="<html>\
+  String pageStart="<html>\
     <head>\
-      <meta http-equiv='refresh' content='15'/>\
+      <meta http-equiv='refresh' content='15; url=/'/>\
       <title>Lightning Detector</title>\
       <style>\
         body { background-color: #cccccc; font-family: Arial, Helvetica, Sans-Serif; Color: #000088; }\
@@ -547,12 +567,21 @@ void documentRoot()
       +getStatus(TYPE_HTML)
       +"<h2><a href=\"/configure\">Configuration</a></h2>"
       +getConfiguration(TYPE_HTML)
-      +"<h2>Strike Data:</h2>"
-      +getStrikes(TYPE_HTML)
-      +"</p>\
+      +"<h2>Strike Data:</h2>";
+      
+      
+  String pageEnd="</p>\
     </body>\
   </html>";
-  server.send(200, "text/html", page);
+
+  String strikes=getStrikes(TYPE_HTML);
+
+  int len=pageStart.length()+strikes.length()+pageEnd.length();
+  
+  server.setContentLength(len);
+  server.send(200, "text/html", pageStart);
+  server.sendContent(strikes);
+  server.sendContent(pageEnd);
   Serial.println("Response sent for document root");
   }
 
@@ -767,7 +796,9 @@ String getStrikes(int type)
   String rbr=type==TYPE_JSON?"]":""; //you know
   if (type==TYPE_HTML)
     {
-    msg+=h2open+"Strike Log:"+h2close;
+    msg+=h2open+"<span style=\"display: inline;\">Strike Log ("+String(MAX_STRIKES)+" max): ";
+    msg+="<form method=\"POST\" action=\"/clear\"><input type=\"submit\" name=\"clear_log\" value=\"CLEAR\"></form>";
+    msg+="</span>"+h2close;
     msg+="<table><tr><th>#</th><th>Date</th><th>Time</th><th>Intensity</th></tr>";
     msg+=getStrikeLog(TYPE_TABLE);
     msg+="</table>";
@@ -778,12 +809,15 @@ String getStrikes(int type)
   return msg;
   }
 
+
+//Returns the strike log
 String getStrikeLog(int type)
   {
   char temp[11];
   char timebuf[25];
   String msg="";
   boolean lastEntry=false;
+  int wholeBuf=MAX_STRIKES;
   
   for (int i=strikeCount-1;i>=0;i--)
     {
@@ -808,6 +842,8 @@ String getStrikeLog(int type)
       msg+=" - ";
       msg+=fmt(displayTime(strikes[j],timebuf," "),itoa(strikeIntensity[j],temp,10),type,lastEntry);
       }
+    if (--wholeBuf<=0)
+      break;
     } 
   return msg;
   }
