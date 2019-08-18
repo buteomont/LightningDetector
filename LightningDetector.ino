@@ -12,7 +12,7 @@
  *  - Configure static or DHCP address
  *
  */
-//#include "WProgram.h" instead of Arduino.h when outside of Arduino IDE
+#include <ArduinoOTA.h>
 #include <ESP8266WiFi.h>
 #include <WiFiClient.h>
 #include <ESP8266WebServer.h>
@@ -180,6 +180,56 @@ void setup()
     Serial.println(".local");
   }
 
+  ArduinoOTA.onStart([]() 
+    {
+    String type;
+    if (ArduinoOTA.getCommand() == U_FLASH) 
+      {
+      type = "sketch";
+      }
+    else 
+      { // U_SPIFFS
+      type = "filesystem";
+      }
+
+    // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
+    Serial.println("Start updating " + type);
+    });
+  ArduinoOTA.onEnd([]() 
+    {
+    Serial.println("\nEnd");
+    });
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) 
+    {
+    Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+    });
+  ArduinoOTA.onError([](ota_error_t error) 
+    {
+    Serial.printf("Error[%u]: ", error);
+    if (error == OTA_AUTH_ERROR) 
+      {
+      Serial.println("Auth Failed");
+      }
+    else if (error == OTA_BEGIN_ERROR) 
+      {
+      Serial.println("Begin Failed");
+      }
+    else if (error == OTA_CONNECT_ERROR) 
+      {
+      Serial.println("Connect Failed");
+      }
+    else if (error == OTA_RECEIVE_ERROR) 
+      {
+      Serial.println("Receive Failed");
+      }
+    else if (error == OTA_END_ERROR) 
+      {
+      Serial.println("End Failed");
+      }
+    });
+  ArduinoOTA.begin();
+
+
   server.on("/", documentRoot);
   server.on("/index.html", documentRoot);
   server.on("/json", sendJson);
@@ -235,7 +285,8 @@ void loop()
   {
   server.handleClient();
   MDNS.update();
-  
+  ArduinoOTA.handle();
+
   //Don't read the sensor too fast or else it will disconnect the wifi
   if(!configured || millis()%10 != 0)
     return;
@@ -562,7 +613,7 @@ void documentRoot()
       </style>\
     </head>\
     <body>\
-      <div style=\"text-align: center;\"><h1>Optical Lightning Detector</h1></div>\
+      <div style=\"text-align: center;\"><h1>Optical Lightning Logger</h1></div>\
       <p><h2>Status</h2>"
       +getStatus(TYPE_HTML)
       +"<h2><a href=\"/configure\">Configuration</a></h2>"
@@ -907,9 +958,6 @@ void loadSettings()
     strcpy(settings.ssid,AP_SSID);
     strcpy(settings.password,AP_PASS);
     strcpy(settings.myMDNS,MY_MDNS);
-//    settings.ssid[SSID_SIZE] = AP_SSID;
-//    settings.password[PASSWORD_SIZE] = AP_PASS;
-//    settings.myMDNS[MDNS_SIZE]=MY_MDNS;
     settings.sensitivity=10;  //successive readings have to be at least this much larger than the last reading to register as a strike
     settings.useStatic=false;
     settings.statIP[0]=0;
