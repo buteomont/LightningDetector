@@ -142,7 +142,8 @@ void setup()
     WiFi.hostname(settings.myMDNS);
     if (settings.useStatic)
       {
-      Serial.println("Using static addressing");
+      String adr=String(settings.statIP[0])+"."+settings.statIP[1]+"."+settings.statIP[2]+"."+settings.statIP[3];
+      Serial.println("Using static addressing: "+adr);
       IPAddress staticIP(settings.statIP[0],settings.statIP[1],settings.statIP[2],settings.statIP[3]); //ESP static ip
       IPAddress gateway(settings.statGW[0],settings.statGW[1],settings.statGW[2],settings.statGW[3]);   //IP Address of your WiFi Router (Gateway)
       IPAddress subnet(255, 255, 255, 0);  //Subnet mask
@@ -195,10 +196,7 @@ void setup()
     // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
     Serial.println("Start updating " + type);
     });
-  ArduinoOTA.onEnd([]() 
-    {
-    Serial.println("\nEnd");
-    });
+  ArduinoOTA.onEnd([]() {Serial.println("\nEnd");});
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) 
     {
     Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
