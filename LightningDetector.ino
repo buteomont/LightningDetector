@@ -406,7 +406,8 @@ void clearLog()
     {
     strikeCount=0;  //reset the pointer to the log head
     Serial.println("Log cleared.");
-    documentRoot();
+    server.sendHeader("Location", String("/"), true);
+    server.send(303, "text/plain", ""); //send them to the main page
     }
   }
   
@@ -602,7 +603,7 @@ void documentRoot()
     }
   String pageStart="<html>\
     <head>\
-      <meta http-equiv='refresh' content='15; url=/'/>\
+      <meta http-equiv='refresh' content='60; url=/'/>\
       <title>Lightning Detector</title>\
       <style>\
         body { background-color: #cccccc; font-family: Arial, Helvetica, Sans-Serif; Color: #000088; }\
@@ -611,12 +612,12 @@ void documentRoot()
       </style>\
     </head>\
     <body>\
-      <div style=\"text-align: center;\"><h1>Optical Lightning Logger</h1></div>\
-      <p><h2>Status</h2>"
+      <div style=\"text-align: center;\"><h3>Optical Lightning Logger</h3></div>\
+      <p><h4>Status</h4>"
       +getStatus(TYPE_HTML)
-      +"<h2><a href=\"/configure\">Configuration</a></h2>"
+      +"<h4>Configuration</h4>"
       +getConfiguration(TYPE_HTML)
-      +"<h2>Strike Data:</h2>";
+      +"<h4>Strike Data:</h4>";
       
       
   String pageEnd="</p>\
@@ -706,6 +707,7 @@ void checkForStrike()
 // Record a strike
 void strike(unsigned int brightness)
   {
+  tone(SOUNDER_PIN,SOUNDER_PITCH,SOUNDER_DURATION);
   digitalWrite(LIGHTNING_LED_PIN, LOW);//turn on the blue LED
   digitalWrite(RELAY_PIN, HIGH);    //turn on the relay
   resetCounter=resetDelay;        //"debounce" the strike
@@ -818,8 +820,8 @@ String getConfiguration(int type)
   {
   char temp[11];
   String cret=type==TYPE_HTML?"<br>":type==TYPE_JSON?"":"\n";
-  String h2open=type==TYPE_HTML?"<h2>":"";
-  String h2close=type==TYPE_HTML?"</h2>":"";
+  String headingOpen=type==TYPE_HTML?"<h4>":"";
+  String headingClose=type==TYPE_HTML?"</h4>":"";
 
   String msg=fmt("SSID",String(settings.ssid),type,false);
   msg+=fmt("mDNS",String(settings.myMDNS)+".local",type,false);
@@ -832,8 +834,8 @@ String getStrikes(int type)
   {
   char temp[11];
   String cret=type==TYPE_HTML?"<br>":type==TYPE_JSON?"":"\n";
-  String h2open=type==TYPE_HTML?"<h2>":"";
-  String h2close=type==TYPE_HTML?"</h2>":"";
+  String headingOpen=type==TYPE_HTML?"<h4>":"";
+  String headingClose=type==TYPE_HTML?"</h4>":"";
   
   String msg=fmt("Past hour",itoa(getRecent(HOUR_MILLISECS/1000),temp,10),type,false);
   msg+=fmt("Past 24 hours",itoa(getRecent(DAY_MILLISECS/1000),temp,10),type,false);
@@ -845,15 +847,19 @@ String getStrikes(int type)
   String rbr=type==TYPE_JSON?"]":""; //you know
   if (type==TYPE_HTML)
     {
-    msg+=h2open+"<span style=\"display: inline;\">Strike Log ("+String(MAX_STRIKES)+" max): ";
-    msg+="<form method=\"POST\" action=\"/clear\"><input type=\"submit\" name=\"clear_log\" value=\"CLEAR\"></form>";
-    msg+="</span>"+h2close;
+    msg+=headingOpen+"Strike Log ("+String(MAX_STRIKES)+" max): ";
+    msg+=headingClose;
+    msg+="<form method=\"POST\" action=\"/clear\">";
     msg+="<table><tr><th>#</th><th>Date</th><th>Time</th><th>Intensity</th></tr>";
     msg+=getStrikeLog(TYPE_TABLE);
+    msg+="<tr><td colspan=4 align=center valign=middle border=0>";
+    msg+="<input type=\"submit\" name=\"clear_log\" value=\"CLEAR\">";
+    msg+="</td></tr>";
     msg+="</table>";
+    msg+="</form>";
     }
   else
-    msg+=fmt(cret+h2open+"Strike Log"+h2close,lbr+getStrikeLog(type)+rbr,type,true);
+    msg+=fmt(cret+headingOpen+"Strike Log"+headingClose,lbr+getStrikeLog(type)+rbr,type,true);
   msg+=type==TYPE_JSON?"}":"";
   return msg;
   }
@@ -920,25 +926,12 @@ int getRecent(unsigned long age)
     }
   return count;
   }
-  
-/*
-* Reset the strike counters 
-*/
-void reset_totals()
-  {
-  for (strikeCount=MAX_STRIKES;strikeCount>=0;strikeCount--)
-    {
-    strikes[strikeCount]=0;  
-    }
-  strikeCount=0;
-  }
 
 boolean saveSettings()
   {
   EEPROM.put(0,settings);
   return EEPROM.commit();
   }
-
 
 /*
 *  Initialize the settings from eeprom

@@ -1,9 +1,15 @@
 //#include "iomap_mhetesp32minikit.h"
 
 #define VERSION          "Version 4.0" // compiled on "__DATE__" at " __TIME__
+
+#define SOUNDER_PIN     D5      //to make the beep
+#define SOUNDER_PITCH   5000    //Hz
+#define SOUNDER_DURATION 100    //milliseconds
+
 #define LIGHTNING_LED_PIN LED_BUILTIN 
 #define BLUE_LED_PIN    D4
-#define RELAY_PIN       12      //relay on digital 12
+#define RELAY_PIN       D2      //relay on digital 12
+
 #define PHOTO_PIN       A0      //input from solar cell
 #define ERROR_PIN       D1      //analog output for ambient light compensation
 #define MAX_READING     1023    //the largest value from the A/D converter
