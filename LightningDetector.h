@@ -3,7 +3,7 @@
 #define VERSION          "Version 4.0" // compiled on "__DATE__" at " __TIME__
 
 #define SOUNDER_PIN     D5      //to make the beep
-#define SOUNDER_PITCH   5000    //Hz
+#define SOUNDER_PITCH   1900    //Hz
 #define SOUNDER_DURATION 100    //milliseconds
 
 #define LIGHTNING_LED_PIN LED_BUILTIN 

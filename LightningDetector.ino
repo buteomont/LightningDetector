@@ -292,6 +292,14 @@ void loop()
     {
     checkForStrike();
     }
+  //If setting the clock failed in setup, try again
+  if (tod==0 && configured)
+    {
+    tod=getNtpTime(); //initialize the TOD clock
+    if (tod>0)
+      setTime(tod);
+    }
+
   }
 
 //format the time to be human-readable
