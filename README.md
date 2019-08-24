@@ -4,7 +4,7 @@
 This device optically detects nearby lightning strikes, records them, and (optionally) energizes a relay for a specified period after each strike.  This version is based on the ESP-12E ESP8266 development kit board, but can be adapted to other processors as well.  Firmware development was done in the Arduino IDE.
 
 ### Hardware
-The hardware is dead simple, as most of the heavy lifting is done by the ESP board and its libraries. An inexpensive solar cell is used both as an optical sensor and as a power source for charging the batteries.  The output from the solar cell is fed to the processor's ADC (analog-to-digital converter) directly. An optional control circuit can be added to energize a relay for a predetermined amount of time whenever lightning is detected.  
+The hardware is dead simple, as most of the heavy lifting is done by the ESP board and its libraries. An inexpensive solar cell is used as an optical sensor.  The output from the solar cell is fed to the processor's ADC (analog-to-digital converter) directly. An optional control circuit can be added to energize a relay for a predetermined amount of time whenever lightning is detected.  
 
 ![Circuit Schematic](https://github.com/buteomont/LightningDetector/blob/master/lightningDetectorV4.0.png "Schematic")
 
@@ -28,3 +28,9 @@ There are several interfaces that can be accessed when the detector is running a
 * /text - The status and log information in plain text form
 * /json - The status and log information in standard machine-readable JSON form
 
+### Planned Enhancements
+Some of the things I'd like to add when I get the time are
+* Security features to require a userid and password when querying or modifying the settings
+* The ability to push the strike event to an external service, email, or SMS account
+* More flexibility in configuring the internal parameters
+* The ability to remove particular unwanted or erro events from the strike log
