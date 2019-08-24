@@ -19,11 +19,11 @@ To reduce false detections, the program will ensure that the length of the strik
 
 There is no security implemented, so anyone with access to the _/configure_ page can make changes. This will be problematic if you decide to make the logger world-accessible. I purposely did not include a link to the _/configure_ page from the main status page for this reason.
 
-The firmware is fully OTA updatable and I would like to see any changes or improvements you come up with!
+The firmware is fully OTA updatable. I would like to see any changes or improvements you come up with!
 
 ### Interface
 There are several interfaces that can be accessed when the detector is running and connected to the LAN:
-* / - The main status page
+* / or /index.html - The main status page
 * /configure - The configuration page for WiFi, LAN, and sensitivity changes
 * /text - The status and log information in plain text form
 * /json - The status and log information in standard machine-readable JSON form
