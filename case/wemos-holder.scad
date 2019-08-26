@@ -1,4 +1,4 @@
-shrinkPCT=.2; //%, PLA
+shrinkPCT=0.6; //%, 0.2 PLA, 0.4 PETG, 0.6 ABS
 fudge=.02;  //mm
 shrinkFactor=1+shrinkPCT/100;
 nozzleDiameter=.4;
@@ -21,6 +21,9 @@ switchDepth=4.5;    //short dimension of the reset switch
 switchHeight=2;     //thickness of the reset switch body
 switchButtonOffset=4; //button center from front edge of card
 switchButtonDiameter=1.5; //diameter of the reset button access hole
+sounderDiameter=11.8;   //diameter of the sounder module
+sounderHeight=8.52;    //height of the sounder module
+sounderWallThickness=1; //thickness of the wall that holds the sounder in place
 
 baseOuterDiameter=52.2; //the largest diameter of the path light base
 baseThickness=1.3;      //the thickness of the plastic base plastic
@@ -44,6 +47,7 @@ boardWireSpaceWidth=boardWidth; //this is the width for the remover for the wire
 boardWireSpaceLength=20.5;      //likewise, the length of the remover
 boardWireSpaceOffset=6; //from antenna end of the board
 
+
 module mount()
   {
   difference()
@@ -55,6 +59,7 @@ module mount()
         {
         cube([boardCubeWidth,boardCubeLength,boardCubeHeight],center=true);
         }
+        
       //Add the guide for the reset switch
       translate([-(boardWidth/2+9),
                   boardCubeOffset-(boardLength/2-switchLength/2),
@@ -63,13 +68,19 @@ module mount()
         rotate([0,90,0])
           cylinder(h=9,d=switchButtonDiameter+2); //hole housing for the reset button
         }
+      
+      //add the sounder holder
+      translate([0,boardCubeOffset+boardLength/2+sounderDiameter/2+fudge,baseThickness+boardCubeHeight/2])
+        {
+        cylinder(h=boardCubeHeight,d=sounderDiameter+sounderWallThickness*2,center=true); //hole housing for the sounder
+        }
       }
     union() //all of this is removed from the main cube
       {
       cylinder(d=baseOuterDiameter,h=baseThickness+fudge*2); //the thin base
       translate([0,0,baseThickness+fudge])
         {
-        cylinder(d=baseInnerDiameter, h=baseInnerHeight); //the thicker center part of the base
+        cylinder(d=baseInnerDiameter*shrinkFactor, h=baseInnerHeight*shrinkFactor); //the thicker center part of the base
         }
       translate([0,boardCubeOffset-boardWallThickness/2,baseThickness+baseInnerHeight+boardConnectorEndThickness-boardThickness/2])
         {
@@ -100,19 +111,27 @@ module mount()
         {
         cube([boardCubeWidth+fudge*2,5,baseInnerHeight]); //remover for extraneous bits left over
         }
+      //add the sounder
+      translate([0,boardCubeOffset+boardLength/2+sounderDiameter/2+fudge,baseThickness+boardCubeHeight/2])
+        {
+        cylinder(h=boardCubeHeight+fudge,d=sounderDiameter*shrinkFactor,center=true); //hole for the sounder
+        }
+
       }
     fit();
     }
+    
+
   }
 
-//Create a remover ring around the whole thing to make it all fit inside the cap. This is mostly for trimming the reset button guide tube
+//Create a remover ring around the whole thing to make it all fit inside the cap. This is mostly for trimming the reset button guide tube and the sounder holder
 module fit()
   {
   difference()
     {
-    translate([0,0,baseThickness-fudge])
+    translate([0,0,baseThickness*shrinkFactor-fudge])
       {
-      cylinder(d=baseOuterDiameter+10, h=boardCubeHeight); 
+      cylinder(d=baseOuterDiameter+10, h=boardCubeHeight+fudge*2); 
       }
     translate([0,0,baseThickness-fudge])
       {
