@@ -47,13 +47,9 @@ static const char configPage[] PROGMEM = "<html>"
     " <div align=\"left\" style=\"display: inline; \" id=\"sens\"></div>"
     "<br><br>"
     "<script> showSensitivity();</script>"
-//    "<input type=\"checkbox\" name=\"factory_reset\" value=\"true\" "
-//    "onchange=\"if (this.checked) {alert('Checking this box will cause the configuration to be set to "
-//    "factory defaults and reset the detector! \\nOnce reset, you must connect your wifi to access point "
-//    "\\'lightning!\\' and browse to http://lightning.local to reconfigure it.');"
-//    "document.forms[0].action='/reset';}else document.forms[0].action='/configure'\">"
-//    "Factory Reset"
-//    "<br><br>"
+    "<input type=\"checkbox\" name=\"beep\" value=\"true\"%s>"
+    "Beep on Detection"
+    "<br><br>"
     "<input type=\"submit\" name=\"Update Configuration\" value=\"Update\">"
     "</form>"
     "<script>"
@@ -67,4 +63,4 @@ static const char configPage[] PROGMEM = "<html>"
     ;
     
 //configBuf is defined globally to keep it off the stack.
-char configBuf[5120]; 
+char configBuf[6480]; 

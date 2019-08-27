@@ -17,7 +17,7 @@
 #define HOUR_MILLISECS 3600000L //60*60*1000
 #define DAY_MILLISECS 86400000L //24*60*60*1000
 #define MIN_STRIKE_WIDTH 1      //Strike lasts at least this many milliseconds
-#define MAX_STRIKE_WIDTH 200    //But no longer than this
+#define MAX_STRIKE_WIDTH 400    //But no longer than this
 #define HTML_CR         "<br>"
 #define TEXT_CR         "\n\r"
 #define OFF             HIGH

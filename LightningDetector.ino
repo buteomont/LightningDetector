@@ -76,6 +76,7 @@ typedef struct
   char myMDNS[MDNS_SIZE]=MY_MDNS;
   int sensitivity=10;  //successive readings have to be at least this much larger than the last reading to register as a strike
   boolean useStatic=false;
+  boolean beepOnStrike=true;
   int statIP[4]={0,0,0,0};
   int statGW[4]={0,0,0,0};
   } conf;
@@ -395,7 +396,8 @@ char* getConfigPage(String message)
               settings.statGW[1],
               settings.statGW[2],
               settings.statGW[3],
-              settings.sensitivity);
+              settings.sensitivity,
+              settings.beepOnStrike?" checked":"");
   return configBuf;
   }
 
@@ -460,6 +462,7 @@ void setConfig()
     String new_myMDNS=server.arg("mdns");
     int new_sensitivity=atoi(server.arg("sensitivity").c_str());
     boolean new_useStatic=strcmp(server.arg("Static").c_str(),"true")==0;
+    boolean new_beepOnStrike=strcmp(server.arg("beep").c_str(),"true")==0;
 
     int new_statIP0=atoi(server.arg("addrOctet0").c_str());
     int new_statIP1=atoi(server.arg("addrOctet1").c_str());
@@ -471,6 +474,7 @@ void setConfig()
     int new_statGW2=atoi(server.arg("gwOctet2").c_str());
     int new_statGW3=atoi(server.arg("gwOctet3").c_str());
 
+    //see if anything changed.  If not, go back to the main page.
     if (strcmp(settings.myMDNS,new_myMDNS.c_str())==0
       &&strcmp(settings.ssid,new_ssid.c_str())==0
       &&strcmp(settings.password,new_password.c_str())==0
@@ -483,10 +487,11 @@ void setConfig()
       && settings.statGW[1]==new_statGW1 
       && settings.statGW[2]==new_statGW2 
       && settings.statGW[3]==new_statGW3 
-      &&settings.sensitivity==new_sensitivity)
+      &&settings.sensitivity==new_sensitivity
+      &&settings.beepOnStrike==new_beepOnStrike)
       {
       server.sendHeader("Location", String("/"), true);
-      server.send(303, "text/plain", ""); //send them back to the configuration page
+      server.send(303, "text/plain", ""); //send them back to the main page
       }
     else 
       {
@@ -507,6 +512,7 @@ void setConfig()
       strcpy(settings.ssid,new_ssid.c_str());
       strcpy(settings.password,new_password.c_str());
       settings.useStatic=new_useStatic;
+      settings.beepOnStrike=new_beepOnStrike;
       if (settings.useStatic)
         {
         settings.statIP[0]=new_statIP0;
@@ -715,7 +721,8 @@ void checkForStrike()
 // Record a strike
 void strike(unsigned int brightness)
   {
-  tone(SOUNDER_PIN,SOUNDER_PITCH,SOUNDER_DURATION);
+  if (settings.beepOnStrike)
+    tone(SOUNDER_PIN,SOUNDER_PITCH,SOUNDER_DURATION);
   digitalWrite(LIGHTNING_LED_PIN, LOW);//turn on the blue LED
   digitalWrite(RELAY_PIN, HIGH);    //turn on the relay
   resetCounter=resetDelay;        //"debounce" the strike
