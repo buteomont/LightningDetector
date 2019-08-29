@@ -33,14 +33,6 @@
   #define MY_MDNS "lightning" 
   #endif
 
-IPAddress local_IP(192,168,1,1);
-IPAddress gateway(192,168,1,254);
-IPAddress subnet(255,255,255,0);
-
-//char ssid[SSID_SIZE] = AP_SSID;
-//char password[PASSWORD_SIZE] = AP_PASS;
-//char myMDNS[MDNS_SIZE]=MY_MDNS;
-
 const char *htmlCr="<br>";
 const char *textCr="\n\r";
 
@@ -126,11 +118,10 @@ void setup()
   lastReading=thisReading;
   
   //Get the WiFi going
-  if (strcmp(AP_SSID,settings.ssid)==0) //using the default SSID?  If so then open the configure page
+  if (!settings.valid) //Are we already configured?  If not then use AP mode
     {
     Serial.print("Configuring soft access point. SSID is \""+String(settings.ssid)+"\". ");
-    WiFi.softAPConfig(local_IP, gateway, subnet);
-    WiFi.softAP(settings.ssid, settings.password);
+    WiFi.softAP(AP_SSID);
   
     IPAddress myIP = WiFi.softAPIP();
     Serial.print("IP address is ");
