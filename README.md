@@ -30,6 +30,7 @@ There are several web endpoints that can be accessed when the detector is runnin
 
 ### Planned Enhancements
 Some of the things I'd like to add when I get the time are
+* Time zone setting in the configuration
 * Security features to require a userid and password when querying or modifying the settings
 * The ability to push the strike event to an external service, email, or SMS account
 * More flexibility in configuring the internal parameters
