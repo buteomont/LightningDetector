@@ -7,9 +7,6 @@
  *
  *  --------Hardware and Software Enhancements----------
  *  - Move strike log to EEPROM
- *  - Add button/REST command to clear strike log
- *  - Read NIST time on boot and use clock time in log instead of elapsed time
- *  - Configure static or DHCP address
  *
  */
 #include <ArduinoOTA.h>
@@ -41,7 +38,6 @@ int thisReading = 0;
 int errval=128; //half way
 int resetCounter=0; //keeps the LED lit long enough to see it when a strike happens
 int resetDelay=100;  //this is how many milliseconds (approx) the LED stays lit after lightning is seen
-//int sensitivity=10;  //successive readings have to be at least this much larger than the last reading to register as a strike
 unsigned long strikes[MAX_STRIKES];       //strike time log
 unsigned int strikeIntensity[MAX_STRIKES];//strike brightness log
 int strikeCount=0;  //number of strikes in the log
@@ -925,7 +921,7 @@ int getRecent(unsigned long age)
   else
     oldest=0;
     
-  for (int i=strikeCount-1;i>=0;i--)
+  for (int i=(strikeCount % MAX_STRIKES)-1;i>=0;i--)
     {
     if (strikes[i]>oldest)
       count++;
