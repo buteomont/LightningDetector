@@ -922,13 +922,13 @@ int getRecent(unsigned long age)
   int count=0;  
 
   //get the run time and subtract age, but don't go below 0
-  unsigned long oldest=now();
+  unsigned long oldest=now(); //gives us number of seconds since Jan 1 1970
   if (oldest>age)  
     oldest-=age;
   else
     oldest=0;
-    
-  for (int i=(strikeCount % MAX_STRIKES)-1;i>=0;i--)
+
+  for (int i=min(strikeCount, MAX_STRIKES)-1;i>=0;i--)
     {
     if (strikes[i]>oldest)
       count++;
