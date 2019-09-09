@@ -54,7 +54,7 @@ ESP8266WebServer server(80);
 WiFiUDP Udp; //for getting time from NIST
 
 unsigned int localPort = 8888;  // local port to listen for UDP packets
-const int timeZone = -4;  // Eastern Daylight Time (USA)
+//const int timeZone = -4;  // Eastern Daylight Time (USA)
 
 typedef struct 
   {
@@ -65,6 +65,7 @@ typedef struct
   int sensitivity=10;  //successive readings have to be at least this much larger than the last reading to register as a strike
   boolean useStatic=false;
   boolean beepOnStrike=true;
+  int tzOffset=-5;
   int statIP[4]={0,0,0,0};
   int statGW[4]={0,0,0,0};
   } conf;
@@ -330,7 +331,7 @@ time_t getNtpTime()
       secsSince1900 |= (unsigned long)packetBuffer[41] << 16;
       secsSince1900 |= (unsigned long)packetBuffer[42] << 8;
       secsSince1900 |= (unsigned long)packetBuffer[43];
-      return secsSince1900 - 2208988800UL + timeZone * SECS_PER_HOUR;
+      return secsSince1900 - 2208988800UL + settings.tzOffset * SECS_PER_HOUR;
       }
     if ((millis()-beginWait) % 1000==0) //re-request the time every second until we get it
       {
@@ -383,6 +384,7 @@ char* getConfigPage(String message)
               settings.statGW[1],
               settings.statGW[2],
               settings.statGW[3],
+              settings.tzOffset,
               settings.sensitivity,
               settings.beepOnStrike?" checked":"");
   return configBuf;
@@ -448,6 +450,7 @@ void setConfig()
     String new_password=server.arg("pword");
     String new_myMDNS=server.arg("mdns");
     int new_sensitivity=atoi(server.arg("sensitivity").c_str());
+    int new_tzOffset=atoi(server.arg("timezone").c_str());
     boolean new_useStatic=strcmp(server.arg("Static").c_str(),"true")==0;
     boolean new_beepOnStrike=strcmp(server.arg("beep").c_str(),"true")==0;
 
@@ -474,8 +477,9 @@ void setConfig()
       && settings.statGW[1]==new_statGW1 
       && settings.statGW[2]==new_statGW2 
       && settings.statGW[3]==new_statGW3 
-      &&settings.sensitivity==new_sensitivity
-      &&settings.beepOnStrike==new_beepOnStrike)
+      && settings.sensitivity==new_sensitivity
+      && settings.tzOffset==new_tzOffset
+      && settings.beepOnStrike==new_beepOnStrike)
       {
       server.sendHeader("Location", String("/"), true);
       server.send(303, "text/plain", ""); //send them back to the main page
@@ -485,6 +489,7 @@ void setConfig()
       boolean needsReboot=strcmp(settings.myMDNS,new_myMDNS.c_str())!=0
                         ||strcmp(settings.ssid,new_ssid.c_str())!=0
                         ||settings.useStatic!=new_useStatic
+                        ||settings.tzOffset !=new_tzOffset
                         ||settings.statIP[0]!=new_statIP0
                         ||settings.statIP[1]!=new_statIP1
                         ||settings.statIP[2]!=new_statIP2
@@ -495,6 +500,7 @@ void setConfig()
                         ||settings.statGW[3]!=new_statGW3;
 
       settings.sensitivity=new_sensitivity;
+      settings.tzOffset=new_tzOffset;
       strcpy(settings.myMDNS,new_myMDNS.c_str());
       strcpy(settings.ssid,new_ssid.c_str());
       strcpy(settings.password,new_password.c_str());
@@ -827,6 +833,7 @@ String getConfiguration(int type)
 
   String msg=fmt("SSID",String(settings.ssid),type,false);
   msg+=fmt("mDNS",String(settings.myMDNS)+".local",type,false);
+  msg+=fmt("GMT Offset",itoa(settings.tzOffset,temp,10),type,false);
   msg+=fmt("Sensitivity",itoa(settings.sensitivity,temp,10),type,true);
   return msg;
   }
@@ -951,6 +958,7 @@ void loadSettings()
     strcpy(settings.ssid,AP_SSID);
     strcpy(settings.password,AP_PASS);
     strcpy(settings.myMDNS,MY_MDNS);
+    settings.tzOffset=-5;
     settings.sensitivity=10;  //successive readings have to be at least this much larger than the last reading to register as a strike
     settings.useStatic=false;
     settings.statIP[0]=0;
