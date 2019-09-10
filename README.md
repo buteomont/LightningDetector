@@ -24,14 +24,13 @@ The firmware is fully OTA updatable. I would like to see any changes or improvem
 ### Interface
 There are several web endpoints that can be accessed when the detector is running and connected to the LAN:
 * / or /index.html - The main status page
-* /configure - The configuration page for WiFi, LAN, and sensitivity changes
+* /configure - The configuration page for WiFi, LAN, sensitivity, and other changes
 * /text - The status and log information in plain text form
 * /json - The status and log information in standard machine-readable JSON form
 
 ### Planned Enhancements
 Some of the things I'd like to add when I get the time are
-* Time zone setting in the configuration
 * Security features to require a userid and password when querying or modifying the settings
 * The ability to push the strike event to an external service, email, or SMS account
 * More flexibility in configuring the internal parameters
-* The ability to remove particular unwanted or error events from the strike log
+* The ability to remove individual unwanted or error events from the strike log
