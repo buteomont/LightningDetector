@@ -845,11 +845,17 @@ String getStrikes(int type)
   String cret=type==TYPE_HTML?"<br>":type==TYPE_JSON?"":"\n";
   String headingOpen=type==TYPE_HTML?"<h4>":"";
   String headingClose=type==TYPE_HTML?"</h4>":"";
-  
-  String msg=fmt("Past hour",itoa(getRecent(HOUR_MILLISECS/1000),temp,10),type,false);
-  msg+=fmt("Past 24 hours",itoa(getRecent(DAY_MILLISECS/1000),temp,10),type,false);
-  msg+=fmt("Past 7 days",itoa(getRecent((DAY_MILLISECS/1000)*7),temp,10),type,false);
-  msg+=fmt("Past 30 days",itoa(getRecent((DAY_MILLISECS/1000)*30L),temp,10),type,false);
+
+  int h=getRecent(HOUR_MILLISECS/1000);
+  int tfh=getRecent(DAY_MILLISECS/1000);
+  int sd=getRecent((DAY_MILLISECS/1000)*7);
+  int td=getRecent((DAY_MILLISECS/1000)*30L);
+  String ms=itoa(MAX_STRIKES,temp,10);
+
+  String msg=fmt("Past hour",h>=MAX_STRIKES?">"+ms:itoa(h,temp,10),type,false);
+  msg+=fmt("Past 24 hours",tfh>=MAX_STRIKES?">"+ms:itoa(tfh,temp,10),type,false);
+  msg+=fmt("Past 7 days",sd>=MAX_STRIKES?">"+ms:itoa(sd,temp,10),type,false);
+  msg+=fmt("Past 30 days",td>=MAX_STRIKES?">"+ms:itoa(td,temp,10),type,false);
   msg+=fmt("Total Strikes",itoa(strikeCount,temp,10),type,false);
   
   String lbr=type==TYPE_JSON?"[":type==TYPE_HTML?"":"\n"; //left bracket
