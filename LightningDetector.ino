@@ -61,13 +61,14 @@ typedef struct
   boolean valid=false; //***** This must remain the first item in this structure! *******
   char ssid[SSID_SIZE] = AP_SSID;
   char password[PASSWORD_SIZE] = AP_PASS;
+  int statIP[4]={0,0,0,0};
+  int statGW[4]={0,0,0,0};
   char myMDNS[MDNS_SIZE]=MY_MDNS;
+  int tzOffset=-5;
   int sensitivity=10;  //successive readings have to be at least this much larger than the last reading to register as a strike
   boolean useStatic=false;
   boolean beepOnStrike=true;
-  int tzOffset=-5;
-  int statIP[4]={0,0,0,0};
-  int statGW[4]={0,0,0,0};
+  int beepPitch=SOUNDER_PITCH;
   } conf;
 
 conf settings; //all settings in one struct makes it easier to store in EEPROM
@@ -386,7 +387,8 @@ char* getConfigPage(String message)
               settings.statGW[3],
               settings.tzOffset,
               settings.sensitivity,
-              settings.beepOnStrike?" checked":"");
+              settings.beepOnStrike?" checked":"",
+              settings.beepPitch);
   return configBuf;
   }
 
@@ -453,6 +455,7 @@ void setConfig()
     int new_tzOffset=atoi(server.arg("timezone").c_str());
     boolean new_useStatic=strcmp(server.arg("Static").c_str(),"true")==0;
     boolean new_beepOnStrike=strcmp(server.arg("beep").c_str(),"true")==0;
+    int new_beepPitch=atoi(server.arg("beepPitch").c_str());
 
     int new_statIP0=atoi(server.arg("addrOctet0").c_str());
     int new_statIP1=atoi(server.arg("addrOctet1").c_str());
@@ -479,7 +482,8 @@ void setConfig()
       && settings.statGW[3]==new_statGW3 
       && settings.sensitivity==new_sensitivity
       && settings.tzOffset==new_tzOffset
-      && settings.beepOnStrike==new_beepOnStrike)
+      && settings.beepOnStrike==new_beepOnStrike
+      && settings.beepPitch==new_beepPitch)
       {
       server.sendHeader("Location", String("/"), true);
       server.send(303, "text/plain", ""); //send them back to the main page
@@ -506,6 +510,7 @@ void setConfig()
       strcpy(settings.password,new_password.c_str());
       settings.useStatic=new_useStatic;
       settings.beepOnStrike=new_beepOnStrike;
+      settings.beepPitch=new_beepPitch;
       if (settings.useStatic)
         {
         settings.statIP[0]=new_statIP0;
@@ -715,7 +720,7 @@ void checkForStrike()
 void strike(unsigned int brightness)
   {
   if (settings.beepOnStrike)
-    tone(SOUNDER_PIN,SOUNDER_PITCH,SOUNDER_DURATION);
+    tone(SOUNDER_PIN,settings.beepPitch,SOUNDER_DURATION);
   digitalWrite(LIGHTNING_LED_PIN, LOW);//turn on the blue LED
   digitalWrite(RELAY_PIN, HIGH);    //turn on the relay
   resetCounter=resetDelay;        //"debounce" the strike
@@ -831,10 +836,13 @@ String getConfiguration(int type)
   String headingOpen=type==TYPE_HTML?"<h4>":"";
   String headingClose=type==TYPE_HTML?"</h4>":"";
 
+  String hz=" Hz";
   String msg=fmt("SSID",String(settings.ssid),type,false);
   msg+=fmt("mDNS",String(settings.myMDNS)+".local",type,false);
   msg+=fmt("GMT Offset",itoa(settings.tzOffset,temp,10),type,false);
-  msg+=fmt("Sensitivity",itoa(settings.sensitivity,temp,10),type,true);
+  msg+=fmt("Sensitivity",itoa(settings.sensitivity,temp,10),type,false);
+  msg+=fmt("Beep on detection",settings.beepOnStrike?"yes":"no",type,false);
+  msg+=fmt("Beep pitch",itoa(settings.beepPitch,temp,10)+hz,type,true);
   return msg;
   }
 
