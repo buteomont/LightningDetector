@@ -47,6 +47,7 @@ long strikeWaitTime; //to keep from having to use delay()
 int intensity;       //temporary storage to record the intensity of the strike for the log
 boolean configured=false;  //don't look for lightning until we are set up
 time_t tod=0;         //time of day
+unsigned long ledTime=millis(); //target time to turn off the LED
 
 IPAddress timeServer(132,163,96,2);  //time.nist.gov
 
@@ -157,7 +158,7 @@ void setup()
         ESP.restart();
         }
       }
-  
+        
     Serial.println("");
     Serial.print("Connected to ");
     Serial.println(settings.ssid);
@@ -289,7 +290,7 @@ void loop()
     if (tod>0)
       setTime(tod);
     }
-
+  manageLED(LED_CHECK,0); //turn off the LED if it's time
   }
 
 //format the time to be human-readable
@@ -409,6 +410,7 @@ void clearLog()
     Serial.println("Log cleared.");
     server.sendHeader("Location", String("/"), true);
     server.send(303, "text/plain", ""); //send them to the main page
+    manageLED(LED_ON,1000); //turn on the LED for a sec
     }
   }
   
@@ -721,7 +723,7 @@ void strike(unsigned int brightness)
   {
   if (settings.beepOnStrike)
     tone(SOUNDER_PIN,settings.beepPitch,SOUNDER_DURATION);
-  digitalWrite(LIGHTNING_LED_PIN, LOW);//turn on the blue LED
+  manageLED(LED_ON,resetDelay); //turn on the blue LED
   digitalWrite(RELAY_PIN, HIGH);    //turn on the relay
   resetCounter=resetDelay;        //"debounce" the strike
   int index=strikeCount++ % MAX_STRIKES;
@@ -737,9 +739,8 @@ void noStrike()
     resetCounter--;
     delay(1);
     }
-  else //turn off the LED and relay
+  else //turn off the relay
     {
-    digitalWrite(LIGHTNING_LED_PIN, HIGH);
     digitalWrite(RELAY_PIN, LOW);
     lastReading=thisReading;
     if (strikeStage>0)
@@ -987,14 +988,39 @@ void loadSettings()
   }
 
 
-//Read the solar cell.  We take the average of several readings because the ADC on 
-//the ESP8266 is real jumpy.  It stores the value in the global thisReading variable.
+//Read the solar cell and store the value in the global thisReading variable.
 int readSensor()
   {
   thisReading=analogRead(PHOTO_PIN);
   return thisReading;
   }
 
+/*
+ * Turn on the built-in LED for a set period of time, or 
+ * off when the time expires.  action is LED_ON, LED_OFF, or LED_CHECK.
+ */
+boolean manageLED(int action, long msec)
+  {
+  switch(action)
+    {
+    case LED_ON:
+      digitalWrite(LIGHTNING_LED_PIN, LOW);
+      ledTime=max(millis()+msec,ledTime); //if already on and longer, just keep it
+      break;
+    
+    case LED_OFF:
+      digitalWrite(LIGHTNING_LED_PIN, HIGH);
+      break;
+
+    case LED_CHECK:
+      if (millis()>=ledTime)
+        manageLED(LED_OFF,0);
+      break;
+
+    default:
+      break;
+    }
+  }
     
 // given a PROGMEM string, use Serial.print() to send it out
 void printProgStr(const char str[])
