@@ -410,33 +410,10 @@ void clearLog()
     Serial.println("Log cleared.");
     server.sendHeader("Location", String("/"), true);
     server.send(303, "text/plain", ""); //send them to the main page
-    manageLED(LED_ON,1000); //turn on the LED for a sec
+    manageLED(LED_ON,CLEAR_LOG_LED_TIME); //turn on the LED for a bit
     }
   }
   
-//void factoryReset()
-//  {
-//  Serial.println("Received factory reset request");
-//  Serial.println("POST data: "+server.arg("plain"));
-//  
-//  char res[]="true";
-//  if (server.hasArg("plain")== false
-//    ||strcmp(res,server.arg("factory_reset").c_str())!=0 ) 
-//    {
-//    server.send(200, "text/html", "Request method must be POST with factory_reset=true" ); //not a POST request
-//    Serial.println("Not a POST, failed.");
-//    }
-//  else
-//    {
-//    settings.valid=false;
-//    saveSettings();
-//    server.sendHeader("Location", String("http://lightning.local/"), true);
-//    server.send(303, "text/plain", ""); //gonna need to configure it again
-//    delay(500);
-//    ESP.restart();   
-//    }
-//  }
-
 void setConfig()
   {
   Serial.println("Received set config request");
@@ -692,7 +669,7 @@ void checkForStrike()
           intensity=max(intensity,thisReading-lastReading); //save the brightness if brighter
           }
         else 
-          noStrike(); // nope, too long
+          noStrike(); // nope, not long enough
         }
         break;
 
@@ -713,7 +690,7 @@ void checkForStrike()
           break;
           
     default:
-      noStrike(); // nope, too long
+      noStrike(); // not a strike
     }
   }
   
@@ -1020,13 +997,4 @@ boolean manageLED(int action, long msec)
     default:
       break;
     }
-  }
-    
-// given a PROGMEM string, use Serial.print() to send it out
-void printProgStr(const char str[])
-  {
-  char c;
-  if(!str) return;
-  while((c = pgm_read_byte(str++)))
-    Serial.print(c);
   }

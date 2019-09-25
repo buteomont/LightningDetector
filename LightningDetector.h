@@ -2,9 +2,10 @@
 
 #define VERSION          "Version 4.0" // compiled on "__DATE__" at " __TIME__
 
-#define SOUNDER_PIN     D5      //to make the beep
-#define SOUNDER_PITCH   2048    //Hz
-#define SOUNDER_DURATION 100    //milliseconds
+#define SOUNDER_PIN         D5   //to make the beep
+#define SOUNDER_PITCH       2048 //Hz
+#define SOUNDER_DURATION    100  //milliseconds
+#define CLEAR_LOG_LED_TIME  2000 //milliseconds to show LED when clearing log
 
 #define LIGHTNING_LED_PIN LED_BUILTIN 
 #define BLUE_LED_PIN    D4
