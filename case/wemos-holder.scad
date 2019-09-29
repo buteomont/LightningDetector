@@ -1,4 +1,4 @@
-shrinkPCT=0.6; //%, 0.2 PLA, 0.4 PETG, 0.6 ABS
+shrinkPCT=3; //%, 1 PLA, 2 PETG, 3 ABS
 fudge=.02;  //mm
 shrinkFactor=1+shrinkPCT/100;
 nozzleDiameter=.4;
@@ -21,13 +21,13 @@ switchDepth=4.5;    //short dimension of the reset switch
 switchHeight=2;     //thickness of the reset switch body
 switchButtonOffset=4; //button center from front edge of card
 switchButtonDiameter=1.5; //diameter of the reset button access hole
-sounderDiameter=11.8;   //diameter of the sounder module
+sounderDiameter=11.9;   //diameter of the sounder module
 sounderHeight=8.52;    //height of the sounder module
 sounderWallThickness=1; //thickness of the wall that holds the sounder in place
 
 baseOuterDiameter=52.2; //the largest diameter of the path light base
 baseThickness=1.3;      //the thickness of the plastic base plastic
-baseInnerDiameter=40.7; //the diameter of the round embossment in the center of the path light base
+baseInnerDiameter=40.8; //the diameter of the round embossment in the center of the path light base
 baseInnerHeight=4.2;    //the height of the embossment above the base
 baseOuterRadius=baseOuterDiameter/2; //sometimes need the radius instead of the diameter
 
