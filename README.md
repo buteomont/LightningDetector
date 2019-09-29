@@ -30,8 +30,12 @@ There are several web endpoints that can be accessed when the detector is runnin
 * /text - The status and log information in plain text form
 * /json - The status and log information in standard machine-readable JSON form
 
+### Problems
+* Every WEMOS board I have seen has a stability problem with the ADC while using the WiFi radio.  Turning off the radio seems to give a much more stable reading from the solar cell, but this is not feasible because it must read the solar cell value continuously looking for a strike and it takes several seconds to reconnect the WiFi after being turned back on.  This is a known problem and I have yet to find a solution outside of using an external ADC.
+* The detector will log false lightning strikes if it is placed in the shadow of a tree. This is due to the leaves fluttering and causing rapid light changes on the solar cell.  A better detection algorithm would clearly improve this. 
+
 ### Planned Enhancements
-Some of the things I'd like to add when I get the time are
+In addition to fixing the above problems, some of the things I'd like to add when I get the time are
 * Security features to require a userid and password when modifying the settings
 * The ability to push the strike event to an external service (such as MQTT), email, or SMS account
 * More flexibility in configuring the internal parameters
