@@ -1,6 +1,6 @@
 //#include "iomap_mhetesp32minikit.h"
 
-#define VERSION          "Version 4.0" // compiled on "__DATE__" at " __TIME__
+#define VERSION          "4.1.0" // compiled on "__DATE__" at " __TIME__
 
 #define SOUNDER_PIN         D5   //to make the beep
 #define SOUNDER_PITCH       2048 //Hz

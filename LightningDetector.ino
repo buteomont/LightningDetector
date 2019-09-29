@@ -53,9 +53,7 @@ IPAddress timeServer(132,163,96,2);  //time.nist.gov
 
 ESP8266WebServer server(80);
 WiFiUDP Udp; //for getting time from NIST
-
-unsigned int localPort = 8888;  // local port to listen for UDP packets
-//const int timeZone = -4;  // Eastern Daylight Time (USA)
+unsigned int localPort = 8888;  // local port to listen for UDP packets for time query
 
 typedef struct 
   {
@@ -224,7 +222,6 @@ void setup()
   server.on("/json", sendJson);
   server.on("/text", sendText);
   server.on("/configure", setConfig);
-//  server.on("/reset",factoryReset);
   server.on("/clear", clearLog);
   server.on("/bad", []() 
     {
@@ -374,6 +371,7 @@ char* getConfigPage(String message)
   char temp[11];
   sprintf_P(configBuf,(PGM_P)FPSTR(configPage),
               message.c_str(),
+              VERSION,
               settings.ssid,
               settings.password,
               settings.myMDNS,
@@ -411,6 +409,8 @@ void clearLog()
     server.sendHeader("Location", String("/"), true);
     server.send(303, "text/plain", ""); //send them to the main page
     manageLED(LED_ON,CLEAR_LOG_LED_TIME); //turn on the LED for a bit
+    if (settings.beepOnStrike)
+      tone(SOUNDER_PIN,settings.beepPitch,CLEAR_LOG_LED_TIME);
     }
   }
   
@@ -592,10 +592,13 @@ void documentRoot()
     setConfig();
     return;
     }
+  String mdms=settings.myMDNS;
   String pageStart="<html>\
     <head>\
       <meta http-equiv='refresh' content='60; url=/'/>\
-      <title>Lightning Detector</title>\
+      <title>"
+      +mdms
+      +" Lightning Detector</title>\
       <style>\
         body { background-color: #cccccc; font-family: Arial, Helvetica, Sans-Serif; Color: #000088; }\
         table {border: 1px solid black;}\
