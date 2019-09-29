@@ -33,7 +33,7 @@ There are several web endpoints that can be accessed when the detector is runnin
 ### Planned Enhancements
 Some of the things I'd like to add when I get the time are
 * Security features to require a userid and password when modifying the settings
-* The ability to push the strike event to an external service, email, or SMS account
+* The ability to push the strike event to an external service (such as MQTT), email, or SMS account
 * More flexibility in configuring the internal parameters
 * The ability to remove individual unwanted or error events from the strike log
 * Automatically remove strike events from the log that are older than 30 days
