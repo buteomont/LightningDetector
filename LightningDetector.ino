@@ -14,6 +14,8 @@
 #include <WiFiClient.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
+#include "Adafruit_MQTT.h"
+#include "Adafruit_MQTT_Client.h"
 #include "Arduino.h"
 #include <pgmspace.h>
 #include <ctype.h>
@@ -48,6 +50,8 @@ int intensity;       //temporary storage to record the intensity of the strike f
 boolean configured=false;  //don't look for lightning until we are set up
 time_t tod=0;         //time of day
 unsigned long ledTime=millis(); //target time to turn off the LED
+unsigned long mqttRetryMs=millis();
+uint8_t mqttRetries = MQTT_RETRIES;
 
 IPAddress timeServer(132,163,96,2);  //time.nist.gov
 
@@ -68,9 +72,21 @@ typedef struct
   boolean useStatic=false;
   boolean beepOnStrike=true;
   int beepPitch=SOUNDER_PITCH;
+  char mqttTopic[MQTT_TOPIC_SIZE]=MQTT_TOPIC;
+  char mqttServer[MQTT_SERVER_SIZE]=MQTT_SERVER;
+  int mqttPort=MQTT_PORT;
+  int mqttQos=MQTT_QOS;
   } conf;
 
 conf settings; //all settings in one struct makes it easier to store in EEPROM
+ 
+WiFiClient client;
+
+// Set up the MQTT client object by passing in the WiFi client and MQTT server details.
+//Adafruit_MQTT_Client* mqtt = new Adafruit_MQTT_Client(&client, settings.mqttServer, settings.mqttPort, "", ""); //no userid or password
+//Adafruit_MQTT_Publish* mqttPublish = new Adafruit_MQTT_Publish(mqtt, settings.mqttTopic);
+Adafruit_MQTT_Client* mqtt = new Adafruit_MQTT_Client(&client, MQTT_SERVER, MQTT_PORT, "", ""); //no userid or password
+Adafruit_MQTT_Publish* mqttPublish = new Adafruit_MQTT_Publish(mqtt, MQTT_TOPIC);
 
 void setup()
   {
@@ -89,7 +105,7 @@ void setup()
   pinMode(RELAY_PIN, OUTPUT);  //set up the relay
   digitalWrite(RELAY_PIN,LOW); //off
 
-  EEPROM.begin(512); //fire up the eeprom section of flash
+  EEPROM.begin(640); //fire up the eeprom section of flash
 
   //look for a double-click on the reset button.  If reset is clicked, then clicked
   //again while the LED is on, then do a factory reset. We detect this by reading the
@@ -245,7 +261,14 @@ void setup()
   Serial.println(millis());
   Serial.print("now() is ");
   Serial.println(now());
-  
+
+//  // Create an ESP8266 WiFiClient object to connect to the MQTT server.
+//  WiFiClient client;
+//
+//  // Set up the MQTT client object by passing in the WiFi client and MQTT server details.
+//  mqtt = new Adafruit_MQTT_Client(&client, settings.mqttServer, settings.mqttPort, "", ""); //no userid or password
+//  mqttPublish = new Adafruit_MQTT_Publish(mqtt, settings.mqttTopic);
+
 //  Serial.print("The time is ");
 //  if (tod>0)
 //    {
@@ -269,6 +292,10 @@ void setup()
 
 void loop()
   {
+  // Ensure the connection to the MQTT server is alive (this will make the first
+  // connection and automatically reconnect when disconnected).
+  MQTT_connect();
+  
   server.handleClient();
   MDNS.update();
   ArduinoOTA.handle();
@@ -447,7 +474,8 @@ void setConfig()
     int new_statGW3=atoi(server.arg("gwOctet3").c_str());
 
     //see if anything changed.  If not, go back to the main page.
-    if (strcmp(settings.myMDNS,new_myMDNS.c_str())==0
+    if (settings.valid 
+      &&strcmp(settings.myMDNS,new_myMDNS.c_str())==0
       &&strcmp(settings.ssid,new_ssid.c_str())==0
       &&strcmp(settings.password,new_password.c_str())==0
       &&settings.useStatic==new_useStatic
@@ -709,6 +737,14 @@ void strike(unsigned int brightness)
   int index=strikeCount++ % MAX_STRIKES;
   strikes[index]=now();  //record the time of this strike
   strikeIntensity[index]=brightness;
+  char timebuf[25];
+  char temp[11];
+  String mqttStrike="{\"Timestamp\":\"";
+  mqttStrike+=displayTime(now(), timebuf, " ");
+  mqttStrike+="\",\"Brightness\":";
+  mqttStrike+=itoa(brightness,temp,10);
+  mqttStrike+="}";
+  mqttPublish->publish(mqttStrike.c_str());
   }
 
 //Not a strike this time
@@ -999,5 +1035,57 @@ boolean manageLED(int action, long msec)
 
     default:
       break;
+    }
+  }
+
+// Function to connect and reconnect as necessary to the MQTT server.
+void MQTT_connect() 
+  {
+  int8_t ret;
+
+  // Return if already connected.
+  if (mqtt->connected()) 
+    {
+    return;
+    }
+
+  if (mqttRetries>0 && millis()>=mqttRetryMs)
+    {
+//    if (!mqtt->ping(2))
+//      {
+//      Serial.print("MQTT server ");
+//      Serial.print(mqtt->getServerName());
+//      Serial.print(" (port ");
+//      Serial.print(mqtt->getPort());
+//      Serial.print(")");
+//      Serial.println(" is not answering a ping request.");
+//      mqttRetryMs=millis()+MQTT_CONNECT_RETRY_DELAY_MS; //delay 5 seconds
+//      return;
+//      }
+    Serial.println("MQTT not yet connected");
+    Serial.print("Connecting to MQTT server " MQTT_SERVER " at port ");
+    Serial.print(MQTT_PORT);
+    Serial.print("... ");
+    ret = mqtt->connect();
+    
+   if (ret != 0)  // connect will return 0 for connected
+      {
+      Serial.println(mqtt->connectErrorString(ret));
+      Serial.print("MQTT connect request returned ");
+      Serial.println(ret);
+      Serial.println("Retrying MQTT connection in 5 seconds.");
+      mqtt->disconnect();
+      mqttRetryMs=millis()+MQTT_CONNECT_RETRY_DELAY_MS; //delay 5 seconds
+      mqttRetries--;
+      if (mqttRetries == 0) 
+        {
+        Serial.println("Unable to connect to MQTT message broker.");
+        }
+      }
+    else
+      {
+      Serial.println("MQTT Connected.");
+      mqttRetries=MQTT_RETRIES;
+      }
     }
   }

@@ -1,6 +1,6 @@
 //#include "iomap_mhetesp32minikit.h"
 
-#define VERSION          "4.1.0" // compiled on "__DATE__" at " __TIME__
+#define VERSION          "4.2.0" // compiled on "__DATE__" at " __TIME__
 
 #define SOUNDER_PIN         D5   //to make the beep
 #define SOUNDER_PITCH       2048 //Hz
@@ -31,9 +31,9 @@
 #define LED_OFF         1
 #define LED_CHECK       2
 
-#define SSID_SIZE 32
-#define PASSWORD_SIZE 64
-#define MDNS_SIZE 256
+#define SSID_SIZE 24
+#define PASSWORD_SIZE 32
+#define MDNS_SIZE 64
 
 //#define EEPROM_ADDR_FLAG 0
 //#define EEPROM_ADDR_SSID 4
@@ -44,5 +44,15 @@
 #define NIST_PORT     13
 #define NIST_HOST     "time.nist.gov"
 #define NTP_PACKET_SIZE 48
+
+#define MQTT_TOPIC "lightning"
+#define MQTT_TOPIC_SIZE 32
+#define MQTT_SERVER "lappy2.local"
+#define MQTT_SERVER_SIZE 32
+#define MQTT_PORT 1883
+#define MQTT_QOS 0
+#define MQTT_CONNECT_RETRY_DELAY_MS 5000
+#define MQTT_RETRIES 4
+
 
 #define DEBUG false  //to show plotter graph
