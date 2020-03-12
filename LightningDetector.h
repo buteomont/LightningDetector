@@ -1,6 +1,6 @@
 //#include "iomap_mhetesp32minikit.h"
 
-#define VERSION          "4.1.0" // compiled on "__DATE__" at " __TIME__
+#define VERSION          "5.0.0" // compiled on "__DATE__" at " __TIME__
 
 #define SOUNDER_PIN         D5   //to make the beep
 #define SOUNDER_PITCH       2048 //Hz
@@ -34,15 +34,32 @@
 #define SSID_SIZE 32
 #define PASSWORD_SIZE 64
 #define MDNS_SIZE 256
-
-//#define EEPROM_ADDR_FLAG 0
-//#define EEPROM_ADDR_SSID 4
-//#define EEPROM_ADDR_PASSWORD EEPROM_ADDR_SSID+SSID_SIZE
-//#define EEPROM_ADDR_MDNS EEPROM_ADDR_PASSWORD+PASSWORD_SIZE
-//#define EEPROM_ADDR_SENSITIVITY EEPROM_ADDR_MDNS+MDNS_SIZE
+#define ADDRESS_SIZE 18
+#define USERNAME_SIZE 32
 
 #define NIST_PORT     13
-#define NIST_HOST     "time.nist.gov"
+#define NIST_HOST     "pool.ntp.org"
 #define NTP_PACKET_SIZE 48
+#define DNS_SERVER0  8
+#define DNS_SERVER1  8
+#define DNS_SERVER2  8
+#define DNS_SERVER3  8
+
+#define AIO_SERVER      "192.168.1.118" //"broker.hivemq.com" //"192.168.1.99"
+#define AIO_SERVERPORT  1883                   // use 8883 for SSL
+#define AIO_USERNAME    "southLightning"
+#define AIO_KEY         "sFlash"
+#define MQTT_TOPIC      "tinyhouse/lightning/southside/brightness"
+#define MQTT_TOPIC_SIZE 64
 
 #define DEBUG false  //to show plotter graph
+
+// Error codes copied from the MQTT library
+#define MQTT_CONNECTION_REFUSED            -2
+#define MQTT_CONNECTION_TIMEOUT            -1
+#define MQTT_SUCCESS                        0
+#define MQTT_UNACCEPTABLE_PROTOCOL_VERSION  1
+#define MQTT_IDENTIFIER_REJECTED            2
+#define MQTT_SERVER_UNAVAILABLE             3
+#define MQTT_BAD_USER_NAME_OR_PASSWORD      4
+#define MQTT_NOT_AUTHORIZED                 5

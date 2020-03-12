@@ -9,9 +9,10 @@
  *  - Move strike log to EEPROM
  *
  */
+
+#include <ArduinoMqttClient.h>
 #include <ArduinoOTA.h>
 #include <ESP8266WiFi.h>
-#include <WiFiClient.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
 #include "Arduino.h"
@@ -48,8 +49,11 @@ int intensity;       //temporary storage to record the intensity of the strike f
 boolean configured=false;  //don't look for lightning until we are set up
 time_t tod=0;         //time of day
 unsigned long ledTime=millis(); //target time to turn off the LED
+unsigned long mqttWait=millis(); //used to slow down MQTT connect retries
+unsigned long looptime=0;
 
-IPAddress timeServer(132,163,96,2);  //time.nist.gov
+//IPAddress timeServer(132,163,96,2);  //time.nist.gov
+IPAddress timeServer;
 
 ESP8266WebServer server(80);
 WiFiUDP Udp; //for getting time from NIST
@@ -68,9 +72,20 @@ typedef struct
   boolean useStatic=false;
   boolean beepOnStrike=true;
   int beepPitch=SOUNDER_PITCH;
+  boolean useMqtt=false;
+  char mqttBrokerAddress[ADDRESS_SIZE]=AIO_SERVER;
+  int mqttBrokerPort=AIO_SERVERPORT;
+  char mqttUsername[USERNAME_SIZE]=AIO_USERNAME;
+  char mqttPassword[PASSWORD_SIZE]=AIO_KEY;
+  char mqttTopic[MQTT_TOPIC_SIZE]=MQTT_TOPIC;
+  int dnsServer[4]={0,0,0,0};
   } conf;
 
 conf settings; //all settings in one struct makes it easier to store in EEPROM
+
+// Set up the MQTT client class by passing in the WiFi client and MQTT server and login details.
+WiFiClient client;
+MqttClient mqttClient(client);
 
 void setup()
   {
@@ -80,7 +95,7 @@ void setup()
   Serial.println();
   delay(500);
   Serial.println("Starting up...");
- 
+
   //initialze the outputs
   pinMode(LIGHTNING_LED_PIN, OUTPUT);  //we'll use the led to indicate detection
   digitalWrite(LIGHTNING_LED_PIN,HIGH); //High is off on the dorkboard
@@ -89,7 +104,9 @@ void setup()
   pinMode(RELAY_PIN, OUTPUT);  //set up the relay
   digitalWrite(RELAY_PIN,LOW); //off
 
-  EEPROM.begin(512); //fire up the eeprom section of flash
+  EEPROM.begin(sizeof(settings)); //fire up the eeprom section of flash
+  Serial.print("Settings object size=");
+  Serial.println(sizeof(settings));
 
   //look for a double-click on the reset button.  If reset is clicked, then clicked
   //again while the LED is on, then do a factory reset. We detect this by reading the
@@ -107,6 +124,26 @@ void setup()
   EEPROM.commit();                    //do the write
 
   loadSettings(); //load the editable settings from eeprom
+
+
+
+
+
+//temporary///////////
+settings.useMqtt=true;
+sprintf(settings.mqttBrokerAddress,"%s",AIO_SERVER);
+settings.mqttBrokerPort=AIO_SERVERPORT;
+sprintf(settings.mqttUsername,"%s",AIO_USERNAME);
+sprintf(settings.mqttPassword,"%s",AIO_KEY);
+sprintf(settings.mqttTopic,"%s",MQTT_TOPIC); 
+settings.dnsServer[0]=DNS_SERVER0;
+settings.dnsServer[1]=DNS_SERVER1;
+settings.dnsServer[2]=DNS_SERVER2;
+settings.dnsServer[3]=DNS_SERVER3;
+EEPROM.put(0,settings);
+//////////////////////
+
+
 
   //initialize variables
   
@@ -127,6 +164,29 @@ void setup()
   else
     {
     configured=true;  //we are configured
+    
+    Serial.println("\n***** Settings ******");
+    Serial.print("valid=");Serial.println(settings.valid?"true":"false");
+    Serial.print("ssid="); Serial.println(settings.ssid);
+    Serial.print("password="); Serial.println(settings.password);
+    Serial.print("statIP="); Serial.print(settings.statIP[0]);Serial.print(".");Serial.print(settings.statIP[1]);Serial.print(".");Serial.print(settings.statIP[2]);Serial.print(".");Serial.println(settings.statIP[3]);
+    Serial.print("statGW="); Serial.print(settings.statGW[0]);Serial.print(".");Serial.print(settings.statGW[1]);Serial.print(".");Serial.print(settings.statGW[2]);Serial.print(".");Serial.println(settings.statGW[3]);
+    Serial.print("myMDNS="); Serial.println(settings.myMDNS);
+    Serial.print("tzOffset="); Serial.println(settings.tzOffset);
+    Serial.print("sensitivity="); Serial.println(settings.sensitivity);
+    Serial.print("useStatic="); Serial.println(settings.useStatic?"true":"false");
+    Serial.print("beepOnStrike="); Serial.println(settings.beepOnStrike?"true":"false");
+    Serial.print("beepPitch="); Serial.println(settings.beepPitch);
+    Serial.print("useMqtt="); Serial.println(settings.useMqtt?"true":"false");
+    Serial.print("mqttBrokerAddress="); Serial.println(settings.mqttBrokerAddress);
+    Serial.print("mqttBrokerPort="); Serial.println(settings.mqttBrokerPort);
+    Serial.print("mqttUsername="); Serial.println(settings.mqttUsername);
+    Serial.print("mqttPassword="); Serial.println(settings.mqttPassword);
+    Serial.print("mqttTopic="); Serial.println(settings.mqttTopic);
+    Serial.print("dnsServer="); Serial.print(settings.dnsServer[0]);Serial.print(".");Serial.print(settings.dnsServer[1]);Serial.print(".");Serial.print(settings.dnsServer[2]);Serial.print(".");Serial.println(settings.dnsServer[3]);
+    Serial.println("***** Settings ******\n");
+
+
     WiFi.disconnect();
     WiFi.hostname(settings.myMDNS);
     if (settings.useStatic)
@@ -136,7 +196,8 @@ void setup()
       IPAddress staticIP(settings.statIP[0],settings.statIP[1],settings.statIP[2],settings.statIP[3]); //ESP static ip
       IPAddress gateway(settings.statGW[0],settings.statGW[1],settings.statGW[2],settings.statGW[3]);   //IP Address of your WiFi Router (Gateway)
       IPAddress subnet(255, 255, 255, 0);  //Subnet mask
-      WiFi.config(staticIP, subnet, gateway);
+      IPAddress dns(settings.dnsServer[0],settings.dnsServer[1],settings.dnsServer[2],settings.dnsServer[3]);   //IP Address of the DNS server
+      WiFi.config(staticIP, gateway, subnet, dns);
       }
       
     WiFi.mode(WIFI_STA);
@@ -145,7 +206,7 @@ void setup()
     Serial.print("Connecting");
   
     // Wait for connection
-    int waitCount=100;
+    int waitCount=150;
     while (WiFi.status() != WL_CONNECTED) 
       {
       delay(500);
@@ -170,6 +231,7 @@ void setup()
     Serial.println(".local");
   }
 
+  Serial.println("\n...Configuring OTA updater");
   ArduinoOTA.onStart([]() 
     {
     String type;
@@ -216,7 +278,23 @@ void setup()
     });
   ArduinoOTA.begin();
 
+    // Set up the MQTT client class by passing in the WiFi client and MQTT server and login details.
+    if (settings.useMqtt)
+      {
+      Serial.println("Attempting to connect to MQTT broker...");
+//      mqttClient.setUsernamePassword(settings.mqttUsername, settings.mqttPassword);
+      if (!mqttClient.connect(settings.mqttBrokerAddress, settings.mqttBrokerPort)) 
+        {
+        Serial.print("MQTT connection failed! Error code = ");
+        Serial.println(mqttClient.connectError());
+        }
+      else
+        {
+        Serial.println("MQTT connected!");
+        }
+      }
 
+  Serial.println("\n...Configuring HTTP server");
   server.on("/", documentRoot);
   server.on("/index.html", documentRoot);
   server.on("/json", sendJson);
@@ -259,8 +337,11 @@ void setup()
 //  Serial.println(xPortGetCoreID());
 
   //Ready to loop
+  Serial.println("\n*** Configuration ***");
   Serial.println(getConfiguration(TYPE_TEXT));
+  Serial.println("\n*** Status ***");
   Serial.println(getStatus(TYPE_TEXT));
+  Serial.println("\n*** Events ***");
   Serial.println(getStrikes(TYPE_TEXT));
 
   Serial.println("Ready.");
@@ -269,17 +350,35 @@ void setup()
 
 void loop()
   {
+  long lt=millis()-looptime;
+  if (lt>3)
+    Serial.println("---loop time: "+String(lt)+"milliseconds.");
+  looptime=millis();
   server.handleClient();
   MDNS.update();
   ArduinoOTA.handle();
 
-  //Don't read the sensor too fast or else it will disconnect the wifi
-  if(!configured || millis()%10 != 0)
-    return;
-  else
+  if (settings.useMqtt)
     {
-    checkForStrike();
+    if (!mqttClient.connected())
+      {
+      Serial.println("Attempting to connect to MQTT broker...");
+      if (!mqttClient.connect(settings.mqttBrokerAddress, settings.mqttBrokerPort)) 
+        {
+        Serial.print("MQTT connection failed! Error code = ");
+        Serial.println(mqttClient.connectError());
+        }
+      else
+        {
+        Serial.println("MQTT connected!");
+        }
+      }
+    else
+      {
+      mqttClient.poll(); //keep the fire burning
+      }
     }
+    
   //If setting the clock failed in setup, try again
   if (tod==0 && configured)
     {
@@ -287,7 +386,14 @@ void loop()
     if (tod>0)
       setTime(tod);
     }
+    
   manageLED(LED_CHECK,0); //turn off the LED if it's time
+  
+  //Don't read the sensor too fast or else it will disconnect the wifi
+  if(!configured || millis()%10 != 0)
+    return;
+    
+  checkForStrike();
   }
 
 //format the time to be human-readable
@@ -313,10 +419,24 @@ byte packetBuffer[NTP_PACKET_SIZE]; // NTP time is in the first 48 bytes of mess
 time_t getNtpTime()
   {
   while (Udp.parsePacket() > 0) ; // discard any previously received packets
-  Serial.println("Transmit NTP Request");
+  
+  int hostFound=WiFi.hostByName(NIST_HOST, timeServer);
+  if (hostFound!=1)
+    {
+    Serial.print("Error resolving address of time server ");
+    Serial.print(NIST_HOST);
+    Serial.print(":");
+    Serial.println(hostFound);
+    return 0;
+    }
+  Serial.print("NTP server is at ");
+  Serial.println(timeServer);
+    
+  Serial.print("Transmit NTP Request to ");
+  Serial.println(timeServer);
   sendNTPpacket(timeServer);
   uint32_t beginWait = millis();
-  while (millis() - beginWait < 5000) 
+  while (millis() - beginWait < 16000) 
     {
     int size = Udp.parsePacket();
     if (size >= NTP_PACKET_SIZE) 
@@ -332,8 +452,9 @@ time_t getNtpTime()
       secsSince1900 |= (unsigned long)packetBuffer[43];
       return secsSince1900 - 2208988800UL + settings.tzOffset * SECS_PER_HOUR;
       }
-    if ((millis()-beginWait) % 1000==0) //re-request the time every second until we get it
+    if ((millis()-beginWait) % 3000==0) //re-request the time every 3 seconds until we get it
       {
+      delay(1); //don't loop more than once per millisecond
       Serial.println("Resending NTP Request");
       sendNTPpacket(timeServer);
       }
@@ -709,6 +830,14 @@ void strike(unsigned int brightness)
   int index=strikeCount++ % MAX_STRIKES;
   strikes[index]=now();  //record the time of this strike
   strikeIntensity[index]=brightness;
+  
+  if (settings.useMqtt)
+    {
+    String payload=String(brightness);
+    mqttClient.beginMessage(settings.mqttTopic,payload.length(),false,0,false);
+    mqttClient.print(payload);
+    mqttClient.endMessage();
+    }
   }
 
 //Not a strike this time

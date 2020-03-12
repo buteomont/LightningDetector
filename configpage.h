@@ -68,6 +68,7 @@ static const char configPage[] PROGMEM = "<html>"
   "</body>"
   "</html>"
   ;
+
     
 //configBuf is defined globally to keep it off the stack.
-char configBuf[6480]; 
+char configBuf[sizeof(configPage)+1024]; 
